@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+web/node_modules/
+.npm-global/
+
+# Build output (构建产物不应提交到仓库)
+web/dist/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Database
+database/*.db
+database/*.db-*
+
+# Backups
+backups/
+
+# SSL Certificates
+certs/
+*.key
+*.crt
+*.pem
+
+# Temporary files
+tmp/
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Security secrets
+config/.jwt-secret
+config/.webdav-config.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Package lock conflicts
+package-lock.json.orig

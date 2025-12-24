@@ -1,0 +1,354 @@
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+
+// 加密算法
+const ALGORITHM = 'aes-256-gcm';
+const SALT = 'Con-Nav-Item-WebDAV-Salt';
+
+// 密钥文件路径（作为备用）
+const CRYPTO_SECRET_PATH = path.join(__dirname, '..', 'config', '.crypto-secret');
+// 数据库路径
+const DB_PATH = path.join(__dirname, '..', 'database', 'nav.db');
+
+// 缓存密钥，避免重复读取
+let cachedSecret = null;
+
+/**
+ * 从数据库获取密钥
+ */
+function getSecretFromDatabase() {
+  try {
+    // 动态加载sqlite3，避免循环依赖
+    const sqlite3 = require('sqlite3').verbose();
+    const db = new sqlite3.Database(DB_PATH);
+    
+    return new Promise((resolve, reject) => {
+      // 先确保settings表存在
+      db.run(`CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )`, (err) => {
+        if (err) {
+          db.close();
+          return reject(err);
+        }
+        
+        // 查询密钥
+        db.get('SELECT value FROM settings WHERE key = ?', ['crypto_secret'], (err, row) => {
+          db.close();
+          if (err) {
+            reject(err);
+          } else {
+            resolve(row ? row.value : null);
+          }
+        });
+      });
+    });
+  } catch (e) {
+    console.warn('从数据库读取密钥失败:', e.message);
+    return Promise.resolve(null);
+  }
+}
+
+/**
+ * 将密钥保存到数据库
+ */
+function saveSecretToDatabase(secret) {
+  try {
+    const sqlite3 = require('sqlite3').verbose();
+    const db = new sqlite3.Database(DB_PATH);
+    
+    return new Promise((resolve, reject) => {
+      // 先确保settings表存在
+      db.run(`CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )`, (err) => {
+        if (err) {
+          db.close();
+          return reject(err);
+        }
+        
+        // 使用REPLACE来插入或更新
+        db.run(
+          'REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
+          ['crypto_secret', secret],
+          (err) => {
+            db.close();
+            if (err) {
+              reject(err);
+            } else {
+              resolve();
+            }
+          }
+        );
+      });
+    });
+  } catch (e) {
+    console.warn('保存密钥到数据库失败:', e.message);
+    return Promise.resolve();
+  }
+}
+
+/**
+ * 获取或生成 CRYPTO_SECRET（同步版本，用于兼容现有代码）
+ */
+function getCryptoSecretSync() {
+  // 1. 优先使用环境变量
+  if (process.env.CRYPTO_SECRET) {
+    return process.env.CRYPTO_SECRET;
+  }
+  
+  // 2. 尝试从文件读取（兼容旧版本）
+  try {
+    if (fs.existsSync(CRYPTO_SECRET_PATH)) {
+      const secret = fs.readFileSync(CRYPTO_SECRET_PATH, 'utf-8').trim();
+      if (secret && secret.length >= 32) {
+        return secret;
+      }
+    }
+  } catch (e) {
+    console.warn('读取密钥文件失败:', e.message);
+  }
+  
+  // 3. 生成新密钥（临时使用，会在异步初始化时保存到数据库）
+  const newSecret = crypto.randomBytes(32).toString('hex');
+  
+  // 尝试保存到文件（作为备用）
+  try {
+    const configDir = path.dirname(CRYPTO_SECRET_PATH);
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true });
+    }
+    fs.writeFileSync(CRYPTO_SECRET_PATH, newSecret, { mode: 0o600 });
+  } catch (e) {
+    console.warn('保存密钥文件失败:', e.message);
+  }
+  
+  return newSecret;
+}
+
+/**
+ * 异步初始化密钥（优先从数据库读取）
+ */
+async function initCryptoSecret() {
+  // 1. 优先使用环境变量
+  if (process.env.CRYPTO_SECRET) {
+    cachedSecret = process.env.CRYPTO_SECRET;
+    console.log('✓ 使用环境变量中的加密密钥');
+    return cachedSecret;
+  }
+  
+  // 2. 尝试从数据库读取
+  try {
+    const dbSecret = await getSecretFromDatabase();
+    if (dbSecret && dbSecret.length >= 32) {
+      cachedSecret = dbSecret;
+      console.log('✓ 从数据库加载加密密钥');
+      
+      // 同步到文件（作为备用）
+      try {
+        const configDir = path.dirname(CRYPTO_SECRET_PATH);
+        if (!fs.existsSync(configDir)) {
+          fs.mkdirSync(configDir, { recursive: true });
+        }
+        fs.writeFileSync(CRYPTO_SECRET_PATH, dbSecret, { mode: 0o600 });
+      } catch (e) {
+        // 忽略文件写入失败
+      }
+      
+      return cachedSecret;
+    }
+  } catch (e) {
+    console.warn('从数据库读取密钥失败:', e.message);
+  }
+  
+  // 3. 尝试从文件读取（兼容旧版本，并迁移到数据库）
+  try {
+    if (fs.existsSync(CRYPTO_SECRET_PATH)) {
+      const fileSecret = fs.readFileSync(CRYPTO_SECRET_PATH, 'utf-8').trim();
+      if (fileSecret && fileSecret.length >= 32) {
+        cachedSecret = fileSecret;
+        
+        // 迁移到数据库
+        try {
+          await saveSecretToDatabase(fileSecret);
+          console.log('✓ 已将加密密钥从文件迁移到数据库');
+        } catch (e) {
+          console.warn('迁移密钥到数据库失败:', e.message);
+        }
+        
+        return cachedSecret;
+      }
+    }
+  } catch (e) {
+    console.warn('读取密钥文件失败:', e.message);
+  }
+  
+  // 4. 生成新密钥并保存到数据库
+  const newSecret = crypto.randomBytes(32).toString('hex');
+  cachedSecret = newSecret;
+  
+  try {
+    await saveSecretToDatabase(newSecret);
+    console.log('✓ 已生成新的加密密钥并保存到数据库');
+  } catch (e) {
+    console.warn('保存新密钥到数据库失败:', e.message);
+  }
+  
+  // 同时保存到文件（作为备用）
+  try {
+    const configDir = path.dirname(CRYPTO_SECRET_PATH);
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true });
+    }
+    fs.writeFileSync(CRYPTO_SECRET_PATH, newSecret, { mode: 0o600 });
+  } catch (e) {
+    // 忽略文件写入失败
+  }
+  
+  return cachedSecret;
+}
+
+/**
+ * 获取加密密钥
+ */
+function getKey() {
+  if (!cachedSecret) {
+    // 如果还没有初始化，使用同步方法获取（兼容）
+    cachedSecret = getCryptoSecretSync();
+  }
+  return crypto.scryptSync(cachedSecret, SALT, 32);
+}
+
+/**
+ * 加密数据
+ * @param {string} text - 要加密的文本
+ * @returns {object} - 包含加密数据、IV和认证标签
+ */
+function encrypt(text) {
+  if (!text) return null;
+  
+  const key = getKey();
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+  
+  let encrypted = cipher.update(text, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  const authTag = cipher.getAuthTag();
+  
+  return {
+    encrypted,
+    iv: iv.toString('hex'),
+    authTag: authTag.toString('hex')
+  };
+}
+
+/**
+ * 解密数据
+ * @param {string} encrypted - 加密的文本
+ * @param {string} iv - 初始化向量
+ * @param {string} authTag - 认证标签
+ * @returns {string} - 解密后的文本
+ */
+function decrypt(encrypted, iv, authTag) {
+  if (!encrypted || !iv || !authTag) return null;
+  
+  try {
+    const key = getKey();
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, Buffer.from(iv, 'hex'));
+    
+    decipher.setAuthTag(Buffer.from(authTag, 'hex'));
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    
+    return decrypted;
+  } catch (error) {
+    console.error('解密失败:', error.message);
+    return null;
+  }
+}
+
+/**
+ * 加密WebDAV配置
+ * @param {object} config - 配置对象 {url, username, password}
+ * @returns {object} - 加密后的配置
+ */
+function encryptWebDAVConfig(config) {
+  return {
+    url: config.url, // URL不加密
+    username: config.username, // 用户名不加密
+    password: encrypt(config.password) // 只加密密码
+  };
+}
+
+/**
+ * 解密WebDAV配置
+ * @param {object} encryptedConfig - 加密的配置对象
+ * @returns {object} - 解密后的配置
+ */
+function decryptWebDAVConfig(encryptedConfig) {
+  if (!encryptedConfig || !encryptedConfig.password) {
+    return null;
+  }
+  
+  const password = decrypt(
+    encryptedConfig.password.encrypted,
+    encryptedConfig.password.iv,
+    encryptedConfig.password.authTag
+  );
+  
+  if (!password) {
+    return null;
+  }
+  
+  return {
+    url: encryptedConfig.url,
+    username: encryptedConfig.username,
+    password: password
+  };
+}
+
+/**
+ * 生成备份签名
+ * @param {Buffer} data - 备份文件内容
+ * @returns {string} - HMAC-SHA256 签名
+ */
+function generateBackupSignature(data) {
+  if (!cachedSecret) {
+    cachedSecret = getCryptoSecretSync();
+  }
+  const hmac = crypto.createHmac('sha256', cachedSecret + SALT);
+  hmac.update(data);
+  return hmac.digest('hex');
+}
+
+/**
+ * 验证备份签名
+ * @param {Buffer} data - 备份文件内容
+ * @param {string} signature - 签名
+ * @returns {boolean} - 是否验证通过
+ */
+function verifyBackupSignature(data, signature) {
+  const expectedSignature = generateBackupSignature(data);
+  // 使用时间安全的比较防止时序攻击
+  return crypto.timingSafeEqual(
+    Buffer.from(expectedSignature, 'hex'),
+    Buffer.from(signature, 'hex')
+  );
+}
+
+module.exports = {
+  encrypt,
+  decrypt,
+  encryptWebDAVConfig,
+  decryptWebDAVConfig,
+  generateBackupSignature,
+  verifyBackupSignature,
+  initCryptoSecret
+};
