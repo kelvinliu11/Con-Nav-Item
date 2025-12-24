@@ -329,8 +329,11 @@ function notifyDataChange() {
   const db = require('../db');
   const { broadcastVersionChange } = require('./sseManager');
   
+  console.log('[数据变更通知] 开始通知...');
+  
   db.incrementDataVersion().then(() => {
     db.getDataVersion().then(version => {
+      console.log('[数据变更通知] 广播版本号:', version);
       broadcastVersionChange(version);
     });
   }).catch(err => {
