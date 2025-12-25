@@ -5,7 +5,14 @@
         :menus="menus" 
         :activeId="activeMenu?.id" 
         :activeSubMenuId="activeSubMenu?.id"
+        :editMode="editMode"
         @select="selectMenu"
+        @addMenu="openAddMenuModal"
+        @editMenu="openEditMenuModal"
+        @deleteMenu="handleDeleteMenu"
+        @addSubMenu="openAddSubMenuModal"
+        @editSubMenu="openEditSubMenuModal"
+        @deleteSubMenu="handleDeleteSubMenu"
       />
     </div>
     
@@ -519,6 +526,39 @@
       </div>
     </div>
     
+    <!-- 菜单编辑弹窗 -->
+    <div v-if="showMenuModal" class="modal-overlay" @click="showMenuModal = false">
+      <div class="modal-content menu-modal" @click.stop>
+        <div class="modal-header">
+          <h3>{{ menuModalMode === 'add' ? '添加' : '编辑' }}{{ menuModalType === 'menu' ? '菜单' : '子菜单' }}</h3>
+          <button @click="showMenuModal = false" class="close-btn">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>名称</label>
+            <input 
+              v-model="editingMenuData.name" 
+              type="text" 
+              :placeholder="menuModalType === 'menu' ? '请输入菜单名称' : '请输入子菜单名称'"
+              class="batch-input"
+              @keyup.enter="saveMenuModal"
+              maxlength="20"
+            />
+          </div>
+          <div class="batch-actions" style="margin-top: 20px;">
+            <button @click="showMenuModal = false" class="btn btn-cancel">取消</button>
+            <button @click="saveMenuModal" class="btn btn-primary" :disabled="menuModalLoading">
+              {{ menuModalLoading ? '保存中...' : '保存' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    
     <!-- 卡片编辑弹窗 -->
     <div v-if="showEditCardModal" class="modal-overlay">
       <div class="modal-content" @click.stop>
@@ -758,7 +798,7 @@
 
 <script setup>
 import { ref, onMounted, onBeforeMount, computed, defineAsyncComponent, onUnmounted } from 'vue';
-import { getMenus, getCards, getAllCards, getPromos, getFriends, verifyPassword, batchParseUrls, batchAddCards, getRandomWallpaper, batchUpdateCards, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getTags, getDataVersion } from '../api';
+import { getMenus, getCards, getAllCards, getPromos, getFriends, verifyPassword, batchParseUrls, batchAddCards, getRandomWallpaper, batchUpdateCards, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getTags, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu } from '../api';
 import MenuBar from '../components/MenuBar.vue';
 import { filterCardsWithPinyin } from '../utils/pinyin';
 import { isDuplicateCard } from '../utils/urlNormalizer';
@@ -2563,6 +2603,123 @@ async function exitEditMode() {
   await loadCards(true);
 }
 
+// ========== 菜单管理相关函数 ==========
+const showMenuModal = ref(false);
+const menuModalMode = ref('add'); // 'add' | 'edit'
+const menuModalType = ref('menu'); // 'menu' | 'subMenu'
+const editingMenuData = ref({ id: null, name: '', parentId: null });
+const menuModalLoading = ref(false);
+
+// 打开添加菜单弹窗
+function openAddMenuModal() {
+  menuModalMode.value = 'add';
+  menuModalType.value = 'menu';
+  editingMenuData.value = { id: null, name: '', parentId: null };
+  showMenuModal.value = true;
+}
+
+// 打开编辑菜单弹窗
+function openEditMenuModal(menu) {
+  menuModalMode.value = 'edit';
+  menuModalType.value = 'menu';
+  editingMenuData.value = { id: menu.id, name: menu.name, parentId: null };
+  showMenuModal.value = true;
+}
+
+// 打开添加子菜单弹窗
+function openAddSubMenuModal(parentMenu) {
+  menuModalMode.value = 'add';
+  menuModalType.value = 'subMenu';
+  editingMenuData.value = { id: null, name: '', parentId: parentMenu.id };
+  showMenuModal.value = true;
+}
+
+// 打开编辑子菜单弹窗
+function openEditSubMenuModal(subMenu, parentMenu) {
+  menuModalMode.value = 'edit';
+  menuModalType.value = 'subMenu';
+  editingMenuData.value = { id: subMenu.id, name: subMenu.name, parentId: parentMenu.id };
+  showMenuModal.value = true;
+}
+
+// 保存菜单
+async function saveMenuModal() {
+  if (!editingMenuData.value.name.trim()) {
+    alert('请输入名称');
+    return;
+  }
+  
+  menuModalLoading.value = true;
+  try {
+    if (menuModalType.value === 'menu') {
+      if (menuModalMode.value === 'add') {
+        await addMenu({ name: editingMenuData.value.name.trim() });
+      } else {
+        await updateMenu(editingMenuData.value.id, { name: editingMenuData.value.name.trim() });
+      }
+    } else {
+      if (menuModalMode.value === 'add') {
+        await addSubMenu(editingMenuData.value.parentId, { name: editingMenuData.value.name.trim() });
+      } else {
+        await updateSubMenu(editingMenuData.value.id, { name: editingMenuData.value.name.trim() });
+      }
+    }
+    
+    // 刷新菜单数据
+    const menusRes = await getMenus(true);
+    menus.value = menusRes.data;
+    showMenuModal.value = false;
+  } catch (error) {
+    alert('操作失败：' + (error.response?.data?.error || error.message));
+  } finally {
+    menuModalLoading.value = false;
+  }
+}
+
+// 删除菜单
+async function handleDeleteMenu(menu) {
+  const cardCount = menu.subMenus?.reduce((sum, sub) => sum + (sub.cardCount || 0), 0) || 0;
+  const msg = cardCount > 0 
+    ? `确定要删除菜单「${menu.name}」吗？\n该菜单下有 ${cardCount} 张卡片将被一并删除！`
+    : `确定要删除菜单「${menu.name}」吗？`;
+  
+  if (!confirm(msg)) return;
+  
+  try {
+    await deleteMenu(menu.id);
+    const menusRes = await getMenus(true);
+    menus.value = menusRes.data;
+    
+    // 如果删除的是当前选中的菜单，切换到第一个
+    if (activeMenu.value?.id === menu.id) {
+      activeMenu.value = menus.value[0] || null;
+      activeSubMenu.value = null;
+      await loadCards(true);
+    }
+  } catch (error) {
+    alert('删除失败：' + (error.response?.data?.error || error.message));
+  }
+}
+
+// 删除子菜单
+async function handleDeleteSubMenu(subMenu, parentMenu) {
+  if (!confirm(`确定要删除子菜单「${subMenu.name}」吗？`)) return;
+  
+  try {
+    await deleteSubMenu(subMenu.id);
+    const menusRes = await getMenus(true);
+    menus.value = menusRes.data;
+    
+    // 如果删除的是当前选中的子菜单，切换到父菜单
+    if (activeSubMenu.value?.id === subMenu.id) {
+      activeSubMenu.value = null;
+      await loadCards(true);
+    }
+  } catch (error) {
+    alert('删除失败：' + (error.response?.data?.error || error.message));
+  }
+}
+
 // 处理容器点击事件，点击空白退出编辑模式
 function handleContainerClick(event) {
   // 只在编辑模式下生效
@@ -3699,6 +3856,12 @@ async function saveCardEdit() {
   flex-direction: column;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   overflow: hidden;
+}
+
+.modal-content.menu-modal {
+  width: 400px;
+  height: auto;
+  min-height: 180px;
 }
 
 .modal-header {
