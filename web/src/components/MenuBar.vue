@@ -1,23 +1,26 @@
 ﻿<template>
-  <nav class="menu-bar" :class="{ 'edit-mode': editMode }">
+  <nav ref="menuBarRef" class="menu-bar" :class="{ 'edit-mode': editMode }">
     <div 
       v-for="menu in menus" 
       :key="menu.id" 
       class="menu-item"
+      :data-menu-id="menu.id"
       @mouseenter="showSubMenu(menu.id)"
       @mouseleave="hideSubMenu(menu.id)"
     >
       <button 
         @click="handleMenuClick(menu)" 
-        :class="{active: menu.id === activeId}"
+        :class="{active: menu.id === activeId, 'drag-handle': editMode}"
       >
         {{ menu.name }}
       </button>
       
-      <!-- 编辑模式下的操作按钮 -->
-      <div v-if="editMode" class="menu-actions">
-        <button class="action-btn edit-btn" @click.stop="$emit('editMenu', menu)" title="编辑">✏️</button>
-        <button class="action-btn del-btn" @click.stop="$emit('deleteMenu', menu)" title="删除">🗑️</button>
+      <!-- 编辑模式下的操作按钮 - 悬停时显示在菜单下方 -->
+      <div v-if="editMode" class="menu-actions-wrapper">
+        <div class="menu-actions">
+          <button class="action-btn edit-btn" @click.stop="$emit('editMenu', menu)" title="编辑">✏️</button>
+          <button class="action-btn del-btn" @click.stop="$emit('deleteMenu', menu)" title="删除">🗑️</button>
+        </div>
       </div>
       
       <!-- 二级菜单 -->
@@ -26,7 +29,12 @@
         class="sub-menu"
         :class="{ 'show': hoveredMenuId === menu.id }"
       >
-        <div v-for="subMenu in menu.subMenus" :key="subMenu.id" class="sub-menu-row">
+        <div 
+          v-for="subMenu in menu.subMenus" 
+          :key="subMenu.id" 
+          class="sub-menu-row"
+          :data-submenu-id="subMenu.id"
+        >
           <button 
             @click="$emit('select', subMenu, menu)"
             :class="{active: subMenu.id === activeSubMenuId}"
@@ -54,7 +62,8 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import Sortable from 'sortablejs';
 
 const props = defineProps({ 
   menus: Array, 
@@ -63,9 +72,11 @@ const props = defineProps({
   editMode: Boolean
 });
 
-const emit = defineEmits(['select', 'addMenu', 'editMenu', 'deleteMenu', 'addSubMenu', 'editSubMenu', 'deleteSubMenu']);
+const emit = defineEmits(['select', 'addMenu', 'editMenu', 'deleteMenu', 'addSubMenu', 'editSubMenu', 'deleteSubMenu', 'menusReordered']);
 
 const hoveredMenuId = ref(null);
+const menuBarRef = ref(null);
+let sortableInstance = null;
 
 function handleMenuClick(menu) {
   emit('select', menu);
@@ -82,6 +93,58 @@ function hideSubMenu(menuId) {
     }
   }, 100);
 }
+
+// 初始化拖拽排序
+function initSortable() {
+  if (!props.editMode || sortableInstance) return;
+  
+  const container = menuBarRef.value;
+  if (!container) return;
+  
+  sortableInstance = new Sortable(container, {
+    animation: 150,
+    ghostClass: 'sortable-ghost',
+    chosenClass: 'sortable-chosen',
+    dragClass: 'sortable-drag',
+    handle: '.drag-handle',
+    filter: '.add-menu-item, .action-btn, .action-btn-sm',
+    preventOnFilter: false,
+    onEnd: (evt) => {
+      const menuIds = Array.from(container.querySelectorAll('.menu-item:not(.add-menu-item)')).map((el) => {
+        return parseInt(el.getAttribute('data-menu-id'));
+      }).filter(id => !isNaN(id));
+      
+      emit('menusReordered', menuIds);
+    }
+  });
+}
+
+// 销毁拖拽
+function destroySortable() {
+  if (sortableInstance) {
+    sortableInstance.destroy();
+    sortableInstance = null;
+  }
+}
+
+// 监听编辑模式变化
+watch(() => props.editMode, (newVal) => {
+  if (newVal) {
+    nextTick(() => initSortable());
+  } else {
+    destroySortable();
+  }
+});
+
+onMounted(() => {
+  if (props.editMode) {
+    nextTick(() => initSortable());
+  }
+});
+
+onUnmounted(() => {
+  destroySortable();
+});
 </script>
 
 <style scoped>
@@ -139,29 +202,52 @@ function hideSubMenu(menuId) {
 }
 
 /* 编辑模式样式 */
-.menu-bar.edit-mode .menu-item {
+.menu-bar.edit-mode .menu-item:not(.add-menu-item) {
   border: 1px dashed rgba(99, 179, 237, 0.4);
   border-radius: 8px;
   margin: 0 2px;
+  cursor: grab;
+}
+
+.menu-bar.edit-mode .menu-item:not(.add-menu-item):active {
+  cursor: grabbing;
+}
+
+/* 操作按钮容器 - 悬停时显示在菜单下方 */
+.menu-actions-wrapper {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease;
+  z-index: 20;
+  padding-top: 4px;
+}
+
+.menu-item:hover .menu-actions-wrapper {
+  opacity: 1;
+  visibility: visible;
 }
 
 .menu-actions {
-  position: absolute;
-  top: -8px;
-  right: -8px;
   display: flex;
-  gap: 2px;
-  z-index: 10;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  padding: 4px 8px;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .action-btn {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border: none;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
-  font-size: 10px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 12px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -309,6 +395,19 @@ function hideSubMenu(menuId) {
   display: none;
 }
 
+/* 拖拽状态 */
+.sortable-ghost {
+  opacity: 0.4;
+}
+
+.sortable-chosen {
+  box-shadow: 0 0 0 2px rgba(99, 179, 237, 0.6);
+}
+
+.sortable-drag {
+  opacity: 0.9;
+}
+
 @media (max-width: 768px) {
   .menu-bar {
     gap: 0.2rem;
@@ -329,9 +428,9 @@ function hideSubMenu(menuId) {
   }
   
   .action-btn {
-    width: 18px;
-    height: 18px;
-    font-size: 8px;
+    width: 20px;
+    height: 20px;
+    font-size: 10px;
   }
   
   .action-btn-sm {

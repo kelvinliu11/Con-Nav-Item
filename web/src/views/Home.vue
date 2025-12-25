@@ -13,6 +13,7 @@
         @addSubMenu="openAddSubMenuModal"
         @editSubMenu="openEditSubMenuModal"
         @deleteSubMenu="handleDeleteSubMenu"
+        @menusReordered="handleMenusReordered"
       />
     </div>
     
@@ -2653,13 +2654,19 @@ async function saveMenuModal() {
   try {
     if (menuModalType.value === 'menu') {
       if (menuModalMode.value === 'add') {
-        await addMenu({ name: editingMenuData.value.name.trim() });
+        // 新菜单添加到末尾
+        const maxOrder = menus.value.length > 0 ? Math.max(...menus.value.map(m => m.order || 0)) : 0;
+        await addMenu({ name: editingMenuData.value.name.trim(), order: maxOrder + 1 });
       } else {
         await updateMenu(editingMenuData.value.id, { name: editingMenuData.value.name.trim() });
       }
     } else {
       if (menuModalMode.value === 'add') {
-        await addSubMenu(editingMenuData.value.parentId, { name: editingMenuData.value.name.trim() });
+        // 新子菜单添加到末尾
+        const parentMenu = menus.value.find(m => m.id === editingMenuData.value.parentId);
+        const subMenus = parentMenu?.subMenus || [];
+        const maxOrder = subMenus.length > 0 ? Math.max(...subMenus.map(s => s.order || 0)) : 0;
+        await addSubMenu(editingMenuData.value.parentId, { name: editingMenuData.value.name.trim(), order: maxOrder + 1 });
       } else {
         await updateSubMenu(editingMenuData.value.id, { name: editingMenuData.value.name.trim() });
       }
@@ -2729,6 +2736,28 @@ async function handleDeleteSubMenu(subMenu, parentMenu) {
       handleTokenInvalid();
     } else {
       alert('删除失败：' + (error.response?.data?.error || error.message));
+    }
+  }
+}
+
+// 处理菜单拖拽排序
+async function handleMenusReordered(menuIds) {
+  try {
+    // 批量更新菜单顺序
+    const updates = menuIds.map((id, index) => updateMenu(id, { order: index }));
+    await Promise.all(updates);
+    
+    // 刷新菜单数据
+    const menusRes = await getMenus(true);
+    menus.value = menusRes.data;
+  } catch (error) {
+    if (error.response?.status === 401) {
+      handleTokenInvalid();
+    } else {
+      alert('排序失败：' + (error.response?.data?.error || error.message));
+      // 刷新恢复原顺序
+      const menusRes = await getMenus(true);
+      menus.value = menusRes.data;
     }
   }
 }
