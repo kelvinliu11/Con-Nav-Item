@@ -525,19 +525,32 @@ function parseTagsResponse(text, existingTags) {
 
 /**
  * 异步为新添加的卡片生成 AI 内容（名称、描述、标签）
+ * AI 生成失败时保留原有数据（回退到原有命名规则的结果）
  * @param {number[]} cardIds - 卡片 ID 列表
  */
 async function autoGenerateForCards(cardIds) {
+  const { triggerDebouncedBackup } = require('../utils/autoBackup');
+  
   try {
     const config = await getDecryptedAIConfig();
     
     // 检查是否启用自动生成
     const rawConfig = await db.getAIConfig();
     if (rawConfig.autoGenerate !== 'true') {
+      console.log('[AI] 自动生成未启用，跳过');
       return;
     }
     
     if (!config.provider || !config.apiKey) {
+      console.log('[AI] AI 提供商未配置，跳过自动生成');
+      return;
+    }
+    
+    // 检查 baseUrl（如果提供商需要）
+    const { AI_PROVIDERS } = require('../utils/aiProvider');
+    const providerConfig = AI_PROVIDERS[config.provider];
+    if (providerConfig && providerConfig.needsBaseUrl && !config.baseUrl) {
+      console.log('[AI] Base URL 未配置，跳过自动生成');
       return;
     }
     
@@ -545,6 +558,7 @@ async function autoGenerateForCards(cardIds) {
     
     const existingTags = await db.getAllTagNames();
     const delay = parseInt(rawConfig.requestDelay) || 1500;
+    let hasUpdates = false;
     
     for (let i = 0; i < cardIds.length; i++) {
       const cardId = cardIds[i];
@@ -555,46 +569,76 @@ async function autoGenerateForCards(cardIds) {
         if (!cards || cards.length === 0) continue;
         
         const card = cards[0];
+        let updatedName = null;
+        let updatedDesc = null;
         
-        // 生成名称
-        const namePrompt = buildNamePrompt({ name: card.name, url: card.url });
-        const name = await callAI(config, namePrompt);
-        const cleanedName = cleanName(name);
+        // 生成名称（仅当原名称看起来像自动生成的域名时）
+        try {
+          const namePrompt = buildNamePrompt({ name: card.name, url: card.url });
+          const name = await callAI(config, namePrompt);
+          updatedName = cleanName(name);
+          if (!updatedName) {
+            console.log(`[AI] 卡片 ${cardId} 名称生成为空，保留原名称`);
+          }
+        } catch (e) {
+          console.warn(`[AI] 卡片 ${cardId} 名称生成失败，保留原名称:`, e.message);
+        }
         
         // 生成描述
-        const descPrompt = buildDescriptionPrompt({ name: cleanedName || card.name, url: card.url });
-        const description = await callAI(config, descPrompt);
-        const cleanedDesc = cleanDescription(description);
+        try {
+          const descPrompt = buildDescriptionPrompt({ 
+            name: updatedName || card.name, 
+            url: card.url 
+          });
+          const description = await callAI(config, descPrompt);
+          updatedDesc = cleanDescription(description);
+          if (!updatedDesc) {
+            console.log(`[AI] 卡片 ${cardId} 描述生成为空，保留原描述`);
+          }
+        } catch (e) {
+          console.warn(`[AI] 卡片 ${cardId} 描述生成失败，保留原描述:`, e.message);
+        }
         
-        // 更新名称和描述
-        if (cleanedName || cleanedDesc) {
-          await db.updateCardNameAndDescription(cardId, cleanedName, cleanedDesc);
+        // 更新名称和描述（仅更新成功生成的字段）
+        if (updatedName || updatedDesc) {
+          await db.updateCardNameAndDescription(cardId, updatedName, updatedDesc);
+          hasUpdates = true;
         }
         
         // 生成标签
-        const tagsPrompt = buildTagsPrompt({ 
-          name: cleanedName || card.name, 
-          url: card.url, 
-          description: cleanedDesc || card.description 
-        }, existingTags);
-        const tagsResponse = await callAI(config, tagsPrompt);
-        const { tags, newTags } = parseTagsResponse(tagsResponse, existingTags);
-        
-        // 更新标签
-        const allTagNames = [...tags, ...newTags];
-        if (allTagNames.length > 0) {
-          await db.updateCardTags(cardId, allTagNames);
+        try {
+          const tagsPrompt = buildTagsPrompt({ 
+            name: updatedName || card.name, 
+            url: card.url, 
+            description: updatedDesc || card.description 
+          }, existingTags);
+          const tagsResponse = await callAI(config, tagsPrompt);
+          const { tags, newTags } = parseTagsResponse(tagsResponse, existingTags);
+          
+          // 更新标签
+          const allTagNames = [...tags, ...newTags];
+          if (allTagNames.length > 0) {
+            await db.updateCardTags(cardId, allTagNames);
+            hasUpdates = true;
+          }
+        } catch (e) {
+          console.warn(`[AI] 卡片 ${cardId} 标签生成失败:`, e.message);
         }
         
-        console.log(`[AI] 卡片 ${cardId} 生成完成: ${cleanedName}`);
+        console.log(`[AI] 卡片 ${cardId} 处理完成: ${updatedName || card.name}`);
         
-        // 延迟
+        // 延迟（避免 API 限流）
         if (i < cardIds.length - 1) {
           await new Promise(r => setTimeout(r, delay));
         }
       } catch (e) {
-        console.warn(`[AI] 卡片 ${cardId} 生成失败:`, e.message);
+        console.warn(`[AI] 卡片 ${cardId} 处理失败:`, e.message);
       }
+    }
+    
+    // 如果有更新，触发数据变更通知（让前端刷新）
+    if (hasUpdates) {
+      triggerDebouncedBackup();
     }
     
     console.log(`[AI] 自动生成完成`);

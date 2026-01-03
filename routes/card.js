@@ -3,6 +3,7 @@ const db = require('../db');
 const auth = require('./authMiddleware');
 const { triggerDebouncedBackup } = require('../utils/autoBackup');
 const { detectDuplicates, isDuplicateCard } = require('../utils/urlNormalizer');
+const { autoGenerateForCards } = require('./ai');
 const router = express.Router();
 
 // 获取所有卡片（按分类分组，用于首屏加载优化）
@@ -218,10 +219,18 @@ router.post('/', auth, (req, res) => {
             if (err) return res.status(500).json({error: err.message});
             
             triggerDebouncedBackup();
+            
+            // 异步触发 AI 自动生成（不阻塞响应）
+            setImmediate(() => autoGenerateForCards([cardId]));
+            
             res.json({ id: cardId });
           });
         } else {
           triggerDebouncedBackup();
+          
+          // 异步触发 AI 自动生成（不阻塞响应）
+          setImmediate(() => autoGenerateForCards([cardId]));
+          
           res.json({ id: cardId });
         }
       }
