@@ -112,7 +112,9 @@
           <span class="stat-value">{{ stats.emptyTags }}</span>
           <span class="stat-label">缺少标签</span>
         </div>
-        <button class="btn btn-text" @click="refreshStats">🔄 刷新</button>
+        <button class="btn btn-text" @click="refreshStats" :disabled="refreshing">
+          {{ refreshing ? '刷新中...' : '🔄 刷新' }}
+        </button>
       </div>
 
       <!-- 空闲状态 -->
@@ -124,21 +126,21 @@
             <button 
               class="btn btn-secondary" 
               @click="startBatch('name', 'empty')"
-              :disabled="!stats || stats.emptyName === 0"
+              :disabled="!stats || stats.emptyName === 0 || starting"
             >
               📝 生成缺少的名称 ({{ stats?.emptyName || 0 }})
             </button>
             <button 
               class="btn btn-secondary" 
               @click="startBatch('description', 'empty')"
-              :disabled="!stats || stats.emptyDesc === 0"
+              :disabled="!stats || stats.emptyDesc === 0 || starting"
             >
               ✨ 生成缺少的描述 ({{ stats?.emptyDesc || 0 }})
             </button>
             <button 
               class="btn btn-secondary" 
               @click="startBatch('tags', 'empty')"
-              :disabled="!stats || stats.emptyTags === 0"
+              :disabled="!stats || stats.emptyTags === 0 || starting"
             >
               🏷️ 生成缺少的标签 ({{ stats?.emptyTags || 0 }})
             </button>
@@ -152,21 +154,21 @@
             <button 
               class="btn btn-warning" 
               @click="startBatch('name', 'all')"
-              :disabled="!stats || stats.total === 0"
+              :disabled="!stats || stats.total === 0 || starting"
             >
               🔄 重新生成所有名称 ({{ stats?.total || 0 }})
             </button>
             <button 
               class="btn btn-warning" 
               @click="startBatch('description', 'all')"
-              :disabled="!stats || stats.total === 0"
+              :disabled="!stats || stats.total === 0 || starting"
             >
               🔄 重新生成所有描述 ({{ stats?.total || 0 }})
             </button>
             <button 
               class="btn btn-warning" 
               @click="startBatch('tags', 'all')"
-              :disabled="!stats || stats.total === 0"
+              :disabled="!stats || stats.total === 0 || starting"
             >
               🔄 重新生成所有标签 ({{ stats?.total || 0 }})
             </button>
@@ -189,8 +191,8 @@
         <div class="progress-info" v-if="batchProgress.currentCard">
           <span class="current-card">{{ batchProgress.currentCard }}</span>
         </div>
-        <button class="btn btn-danger" @click="stopBatch">
-          ⏹️ 停止
+        <button class="btn btn-danger" @click="stopBatch" :disabled="stopping">
+          {{ stopping ? '停止中...' : '⏹️ 停止' }}
         </button>
       </div>
     </div>
@@ -246,12 +248,14 @@ export default {
       showApiKey: false,
       testing: false,
       saving: false,
+      refreshing: false,
+      starting: false,
+      stopping: false,
       stats: null,
       batchRunning: false,
       batchType: '',
       batchMode: '', // 'empty' | 'all'
       batchProgress: { current: 0, total: 0, currentCard: '' },
-      shouldStop: false,
       message: '',
       messageType: 'info'
     };
@@ -367,6 +371,8 @@ export default {
       }
     },
     async refreshStats() {
+      if (this.refreshing) return;
+      this.refreshing = true;
       try {
         const [nameRes, descRes, tagsRes, allRes] = await Promise.all([
           api.get('/api/ai/empty-cards?type=name'),
@@ -382,9 +388,14 @@ export default {
         };
       } catch (e) {
         // 静默处理
+      } finally {
+        this.refreshing = false;
       }
     },
     async startBatch(type, mode) {
+      // 防止重复点击
+      if (this.starting || this.batchRunning) return;
+      
       // mode: 'empty' = 只处理缺少的, 'all' = 处理所有
       if (mode === 'all') {
         const typeLabels = { name: '名称', description: '描述', tags: '标签' };
@@ -392,6 +403,7 @@ export default {
         if (!confirm(confirmMsg)) return;
       }
       
+      this.starting = true;
       this.batchType = type;
       this.batchMode = mode;
       this.batchProgress = { current: 0, total: 0, currentCard: '' };
@@ -419,6 +431,8 @@ export default {
         
       } catch (e) {
         this.showMessage(e.response?.data?.message || '启动任务失败', 'error');
+      } finally {
+        this.starting = false;
       }
     },
     async pollTaskStatus() {
@@ -454,11 +468,16 @@ export default {
       poll();
     },
     async stopBatch() {
+      if (this.stopping) return;
+      this.stopping = true;
       try {
         await api.post('/api/ai/batch-task/stop');
         this.showMessage('正在停止任务...', 'info');
       } catch (e) {
         // 静默处理
+      } finally {
+        // 延迟重置，等待任务实际停止
+        setTimeout(() => { this.stopping = false; }, 2000);
       }
     },
     async getExistingTags() {
