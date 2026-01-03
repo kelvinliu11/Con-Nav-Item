@@ -173,7 +173,15 @@ router.post('/generate', authMiddleware, async (req, res) => {
 // 获取缺少描述/标签的卡片
 router.get('/empty-cards', authMiddleware, async (req, res) => {
   try {
-    const { type } = req.query; // 'description' | 'tags' | 'both'
+    const { type, mode } = req.query; // type: 'description' | 'tags' | 'both', mode: 'empty' | 'all'
+    
+    // mode=all 时返回所有卡片（用于重新生成）
+    if (mode === 'all') {
+      const cards = await db.getAllCards();
+      return res.json({ success: true, cards, total: cards.length });
+    }
+    
+    // 默认只返回缺少内容的卡片
     const cards = await db.getCardsNeedingAI(type || 'both');
     res.json({ success: true, cards, total: cards.length });
   } catch (error) {

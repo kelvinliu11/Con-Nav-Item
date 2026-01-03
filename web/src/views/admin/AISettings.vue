@@ -97,6 +97,10 @@
       
       <div class="stats-row" v-if="stats">
         <div class="stat-item">
+          <span class="stat-value">{{ stats.total }}</span>
+          <span class="stat-label">总卡片数</span>
+        </div>
+        <div class="stat-item">
           <span class="stat-value">{{ stats.emptyDesc }}</span>
           <span class="stat-label">缺少描述</span>
         </div>
@@ -109,29 +113,53 @@
 
       <!-- 空闲状态 -->
       <div class="batch-idle" v-if="!batchRunning">
-        <p class="hint">扫描所有缺少描述或标签的卡片，使用 AI 自动生成</p>
-        <div class="btn-group">
-          <button 
-            class="btn btn-secondary" 
-            @click="startBatch('description')"
-            :disabled="!stats || stats.emptyDesc === 0"
-          >
-            ✨ 生成所有描述
-          </button>
-          <button 
-            class="btn btn-secondary" 
-            @click="startBatch('tags')"
-            :disabled="!stats || stats.emptyTags === 0"
-          >
-            🏷️ 生成所有标签
-          </button>
+        <div class="batch-group">
+          <h4>补充缺失内容</h4>
+          <p class="hint">只为缺少内容的卡片生成</p>
+          <div class="btn-group">
+            <button 
+              class="btn btn-secondary" 
+              @click="startBatch('description', 'empty')"
+              :disabled="!stats || stats.emptyDesc === 0"
+            >
+              ✨ 生成缺少的描述 ({{ stats?.emptyDesc || 0 }})
+            </button>
+            <button 
+              class="btn btn-secondary" 
+              @click="startBatch('tags', 'empty')"
+              :disabled="!stats || stats.emptyTags === 0"
+            >
+              🏷️ 生成缺少的标签 ({{ stats?.emptyTags || 0 }})
+            </button>
+          </div>
+        </div>
+        
+        <div class="batch-group">
+          <h4>重新生成所有</h4>
+          <p class="hint">覆盖所有卡片的现有内容</p>
+          <div class="btn-group">
+            <button 
+              class="btn btn-warning" 
+              @click="startBatch('description', 'all')"
+              :disabled="!stats || stats.total === 0"
+            >
+              🔄 重新生成所有描述 ({{ stats?.total || 0 }})
+            </button>
+            <button 
+              class="btn btn-warning" 
+              @click="startBatch('tags', 'all')"
+              :disabled="!stats || stats.total === 0"
+            >
+              🔄 重新生成所有标签 ({{ stats?.total || 0 }})
+            </button>
+          </div>
         </div>
       </div>
 
       <!-- 进行中状态 -->
       <div class="batch-progress" v-else>
         <div class="progress-header">
-          <span>{{ batchType === 'description' ? '生成描述' : '生成标签' }}中...</span>
+          <span>{{ batchLabel }}中...</span>
           <span>{{ batchProgress.current }} / {{ batchProgress.total }}</span>
         </div>
         <div class="progress-bar">
@@ -203,6 +231,7 @@ export default {
       stats: null,
       batchRunning: false,
       batchType: '',
+      batchMode: '', // 'empty' | 'all'
       batchProgress: { current: 0, total: 0, currentCard: '' },
       shouldStop: false,
       message: '',
@@ -225,6 +254,11 @@ export default {
     progressPercent() {
       if (!this.batchProgress.total) return 0;
       return Math.round((this.batchProgress.current / this.batchProgress.total) * 100);
+    },
+    batchLabel() {
+      const typeLabel = this.batchType === 'description' ? '描述' : '标签';
+      const modeLabel = this.batchMode === 'all' ? '重新生成所有' : '生成缺少的';
+      return `${modeLabel}${typeLabel}`;
     }
   },
   async mounted() {
@@ -245,7 +279,7 @@ export default {
           this.config.autoGenerate = cfg.autoGenerate || false;
         }
       } catch (e) {
-        console.error('加载 AI 配置失败:', e);
+        // 静默处理
       }
     },
     onProviderChange() {
@@ -294,27 +328,41 @@ export default {
     },
     async refreshStats() {
       try {
-        const [descRes, tagsRes] = await Promise.all([
+        const [descRes, tagsRes, allRes] = await Promise.all([
           api.get('/api/ai/empty-cards?type=description'),
-          api.get('/api/ai/empty-cards?type=tags')
+          api.get('/api/ai/empty-cards?type=tags'),
+          api.get('/api/ai/empty-cards?type=description&mode=all')
         ]);
         this.stats = {
           emptyDesc: descRes.data.total || 0,
-          emptyTags: tagsRes.data.total || 0
+          emptyTags: tagsRes.data.total || 0,
+          total: allRes.data.total || 0
         };
       } catch (e) {
-        console.error('获取统计失败:', e);
+        // 静默处理
       }
     },
-    async startBatch(type) {
+    async startBatch(type, mode) {
+      // mode: 'empty' = 只处理缺少的, 'all' = 处理所有
+      if (mode === 'all') {
+        const confirmMsg = type === 'description' 
+          ? '确定要重新生成所有卡片的描述吗？这将覆盖现有描述。'
+          : '确定要重新生成所有卡片的标签吗？这将覆盖现有标签。';
+        if (!confirm(confirmMsg)) return;
+      }
+      
       this.batchType = type;
+      this.batchMode = mode;
       this.batchRunning = true;
       this.shouldStop = false;
       this.batchProgress = { current: 0, total: 0, currentCard: '' };
 
       try {
         // 获取待处理卡片
-        const res = await api.get(`/api/ai/empty-cards?type=${type}`);
+        const url = mode === 'all' 
+          ? `/api/ai/empty-cards?type=${type}&mode=all`
+          : `/api/ai/empty-cards?type=${type}`;
+        const res = await api.get(url);
         const cards = res.data.cards || [];
         
         if (cards.length === 0) {
@@ -362,7 +410,7 @@ export default {
               }
             }
           } catch (e) {
-            console.error(`处理卡片 ${card.title} 失败:`, e);
+            // 处理失败，继续下一个
           }
 
           // 延迟
@@ -588,6 +636,38 @@ h3 {
   padding: 16px;
   background: var(--secondary-bg, #f9fafb);
   border-radius: 8px;
+}
+
+.batch-group {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+}
+
+.batch-group:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.batch-group h4 {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #333);
+}
+
+.batch-group .hint {
+  margin-bottom: 12px;
+}
+
+.btn-warning {
+  background: #f59e0b;
+  color: #fff;
+}
+
+.btn-warning:hover:not(:disabled) {
+  background: #d97706;
 }
 
 .progress-header {

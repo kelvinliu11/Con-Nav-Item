@@ -605,6 +605,11 @@ async function getCardsNeedingAI(type) {
   return await dbAll(sql);
 }
 
+// 获取所有卡片（用于重新生成）
+async function getAllCards() {
+  return await dbAll('SELECT id, title, url, desc FROM cards ORDER BY id');
+}
+
 // 根据 ID 获取卡片
 async function getCardsByIds(ids) {
   if (!ids || ids.length === 0) return [];
@@ -706,6 +711,7 @@ const dbWrapper = {
   getAIConfig,
   saveAIConfig,
   getCardsNeedingAI,
+  getAllCards,
   getCardsByIds,
   getAllTagNames,
   updateCardDescription,
