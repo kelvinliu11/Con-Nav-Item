@@ -256,6 +256,7 @@ export default {
       batchType: '',
       batchMode: '', // 'empty' | 'all'
       batchProgress: { current: 0, total: 0, currentCard: '' },
+      pollTimer: null, // 轮询定时器
       message: '',
       messageType: 'info'
     };
@@ -289,7 +290,18 @@ export default {
     await this.refreshStats();
     await this.checkRunningTask();
   },
+  beforeUnmount() {
+    // 清理轮询定时器
+    this.stopPolling();
+  },
   methods: {
+    // 停止轮询
+    stopPolling() {
+      if (this.pollTimer) {
+        clearTimeout(this.pollTimer);
+        this.pollTimer = null;
+      }
+    },
     async loadConfig() {
       try {
         const res = await api.get('/api/ai/config');
@@ -315,12 +327,12 @@ export default {
           this.batchType = res.data.type;
           this.batchMode = res.data.mode;
           this.batchProgress = {
-            current: res.data.current,
-            total: res.data.total,
-            currentCard: res.data.currentCard
+            current: res.data.current || 0,
+            total: res.data.total || 0,
+            currentCard: res.data.currentCard || ''
           };
           // 开始轮询
-          this.pollTaskStatus();
+          this.startPolling();
         }
       } catch (e) {
         // 静默处理
@@ -404,87 +416,101 @@ export default {
       }
       
       this.starting = true;
-      this.batchType = type;
-      this.batchMode = mode;
-      this.batchProgress = { current: 0, total: 0, currentCard: '正在启动...' };
-      // 立即显示进度条
-      this.batchRunning = true;
+      this.stopPolling(); // 清理之前的轮询
 
       try {
         // 启动后台任务
         const res = await api.post('/api/ai/batch-task/start', { type, mode });
         
         if (!res.data.success) {
-          this.batchRunning = false;
           this.showMessage(res.data.message || '启动任务失败', 'error');
           return;
         }
         
         if (res.data.total === 0) {
-          this.batchRunning = false;
           this.showMessage('没有需要处理的卡片', 'info');
+          await this.refreshStats();
           return;
         }
         
-        this.batchProgress.total = res.data.total;
-        this.batchProgress.currentCard = '';
+        // 任务启动成功，设置状态并显示进度条
+        this.batchType = type;
+        this.batchMode = mode;
+        this.batchProgress = { 
+          current: 0, 
+          total: res.data.total, 
+          currentCard: '正在处理...' 
+        };
+        this.batchRunning = true;
         this.showMessage(`任务已启动，共 ${res.data.total} 个卡片`, 'info');
         
         // 开始轮询任务状态
-        this.pollTaskStatus();
+        this.startPolling();
         
       } catch (e) {
-        this.batchRunning = false;
         this.showMessage(e.response?.data?.message || '启动任务失败', 'error');
       } finally {
         this.starting = false;
       }
     },
-    async pollTaskStatus() {
-      // 轮询任务状态
-      let pollCount = 0;
+    
+    // 开始轮询
+    startPolling() {
       const poll = async () => {
-        if (!this.batchRunning) return;
-        pollCount++;
+        if (!this.batchRunning) {
+          this.stopPolling();
+          return;
+        }
         
         try {
           const res = await api.get('/api/ai/batch-task/status');
-          if (res.data.success) {
-            if (res.data.running) {
-              this.batchProgress.current = res.data.current;
-              this.batchProgress.total = res.data.total;
-              this.batchProgress.currentCard = res.data.currentCard;
-              // 继续轮询
-              setTimeout(poll, 1000);
-            } else {
-              // 任务未运行
-              // 检查是否有处理结果（successCount > 0 或 current > 0 表示任务已执行过）
-              const hasResult = (res.data.successCount > 0) || (res.data.current > 0);
-              
-              if (pollCount <= 5 && !hasResult) {
-                // 前几次轮询且没有处理结果，可能任务还没开始，继续等待
-                setTimeout(poll, 800);
-              } else {
-                // 任务完成
-                this.batchRunning = false;
-                const successCount = res.data.successCount || 0;
-                const total = res.data.total || this.batchProgress.total;
-                if (total > 0) {
-                  this.showMessage(`完成！成功处理 ${successCount} / ${total} 个卡片`, 'success');
-                }
-                // 延迟一点再刷新统计，确保数据已更新
-                setTimeout(() => this.refreshStats(), 500);
-              }
-            }
+          
+          if (!res.data.success) {
+            // 请求失败，继续轮询
+            this.pollTimer = setTimeout(poll, 1500);
+            return;
+          }
+          
+          // 更新进度信息
+          if (res.data.total > 0) {
+            this.batchProgress.current = res.data.current || 0;
+            this.batchProgress.total = res.data.total;
+            this.batchProgress.currentCard = res.data.currentCard || '';
+          }
+          
+          if (res.data.running) {
+            // 任务仍在运行，继续轮询
+            this.pollTimer = setTimeout(poll, 800);
+          } else {
+            // 任务已完成
+            this.onTaskComplete(res.data);
           }
         } catch (e) {
-          // 轮询失败，继续尝试
-          setTimeout(poll, 2000);
+          // 请求异常，继续轮询
+          this.pollTimer = setTimeout(poll, 2000);
         }
       };
       
-      // 延迟 500ms 开始第一次轮询，给后端一点时间启动任务
-      setTimeout(poll, 500);
+      // 立即开始第一次轮询
+      poll();
+    },
+    
+    // 任务完成处理
+    onTaskComplete(data) {
+      this.stopPolling();
+      this.batchRunning = false;
+      
+      const successCount = data.successCount || 0;
+      const total = data.total || this.batchProgress.total;
+      
+      if (total > 0) {
+        this.showMessage(`完成！成功处理 ${successCount} / ${total} 个卡片`, 'success');
+      } else {
+        this.showMessage('任务已完成', 'success');
+      }
+      
+      // 刷新统计
+      setTimeout(() => this.refreshStats(), 300);
     },
     async stopBatch() {
       if (this.stopping) return;
@@ -492,10 +518,10 @@ export default {
       try {
         await api.post('/api/ai/batch-task/stop');
         this.showMessage('正在停止任务...', 'info');
+        // 停止后继续轮询，等待任务实际停止
       } catch (e) {
         // 静默处理
       } finally {
-        // 延迟重置，等待任务实际停止
         setTimeout(() => { this.stopping = false; }, 2000);
       }
     },
