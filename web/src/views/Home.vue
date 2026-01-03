@@ -577,12 +577,23 @@
           <div class="edit-card-form">
             <div class="form-group">
               <label>标题</label>
-              <input 
-                v-model="cardEditForm.title" 
-                type="text" 
-                placeholder="请输入标题"
-                class="batch-input"
-              />
+              <div class="input-with-ai">
+                <input 
+                  v-model="cardEditForm.title" 
+                  type="text" 
+                  placeholder="请输入标题"
+                  class="batch-input"
+                />
+                <button 
+                  @click="generateAIName" 
+                  class="ai-btn" 
+                  :class="{ 'ai-btn-disabled': !aiConfigured }"
+                  :disabled="aiGeneratingName || !aiConfigured"
+                  :title="aiConfigured ? 'AI 生成名称' : '请先在后台配置 AI 服务'"
+                >
+                  {{ aiGeneratingName ? '⏳' : '✨' }}
+                </button>
+              </div>
             </div>
             <div class="form-group">
               <label>网址</label>
@@ -614,8 +625,9 @@
                 <button 
                   @click="generateAIDescription" 
                   class="ai-btn" 
-                  :disabled="aiGenerating"
-                  title="AI 生成描述"
+                  :class="{ 'ai-btn-disabled': !aiConfigured }"
+                  :disabled="aiGenerating || !aiConfigured"
+                  :title="aiConfigured ? 'AI 生成描述' : '请先在后台配置 AI 服务'"
                 >
                   {{ aiGenerating ? '⏳' : '✨' }}
                 </button>
@@ -627,8 +639,9 @@
                 <button 
                   @click="generateAITags" 
                   class="ai-btn-inline" 
-                  :disabled="aiGeneratingTags"
-                  title="AI 推荐标签"
+                  :class="{ 'ai-btn-disabled': !aiConfigured }"
+                  :disabled="aiGeneratingTags || !aiConfigured"
+                  :title="aiConfigured ? 'AI 推荐标签' : '请先在后台配置 AI 服务'"
                 >
                   {{ aiGeneratingTags ? '⏳' : '🏷️ AI推荐' }}
                 </button>
@@ -874,6 +887,8 @@ const rememberEditPassword = ref(false);
 // AI 生成相关状态
 const aiGenerating = ref(false);
 const aiGeneratingTags = ref(false);
+const aiGeneratingName = ref(false);
+const aiConfigured = ref(false); // AI 是否已配置
 
 // 批量移动相关状态
 const selectedCards = ref([]);
@@ -1178,7 +1193,7 @@ async function addCustomEngine() {
     };
     searchEngines.value.push(customEngine);
     
-    showToastMessage('搜索引擎添加成功');
+    showToastMessage('搜索引擎添加成功', 'success');
     closeAddEngineModal();
   } catch (error) {
     engineError.value = error.response?.data?.error || '添加失败';
@@ -1221,7 +1236,7 @@ async function deleteCustomEngine(engine) {
       selectEngine(searchEngines.value[0]);
     }
     
-    showToastMessage('删除成功');
+    showToastMessage('删除成功', 'success');
   } catch (error) {
     alert('删除失败：' + (error.response?.data?.error || error.message));
   }
@@ -2429,6 +2444,7 @@ async function addSelectedCards() {
     const added = response.data.added || 0;
     const skipped = response.data.skipped || 0;
     const skippedCards = response.data.skippedCards || [];
+    const addedCardIds = response.data.ids || [];
     
     let message = '';
     
@@ -2448,10 +2464,106 @@ async function addSelectedCards() {
     // 关闭弹窗并强制刷新卡片列表（不使用缓存）
     closeBatchAdd();
     await loadCards(true);
+    
+    // 如果有新添加的卡片，检查是否需要自动 AI 生成
+    if (addedCardIds && addedCardIds.length > 0) {
+      await autoGenerateAIForNewCards(addedCardIds);
+    }
   } catch (error) {
     batchError.value = error.response?.data?.error || '添加失败，请重试';
   } finally {
     batchLoading.value = false;
+  }
+}
+
+// 自动为新添加的卡片生成 AI 描述和标签
+async function autoGenerateAIForNewCards(cardIds) {
+  try {
+    // 检查 AI 配置是否启用自动生成
+    const configRes = await api.get('/api/ai/config');
+    if (!configRes.data.success || !configRes.data.config.autoGenerate) {
+      return; // 未启用自动生成
+    }
+    
+    if (!configRes.data.config.hasApiKey) {
+      return; // 未配置 API Key
+    }
+    
+    // 显示进度提示
+    showToastMessage('🤖 AI 正在自动生成名称、描述和标签...', 'info', 0);
+    
+    const existingTags = allTags.value.map(t => t.name);
+    const delay = configRes.data.config.requestDelay || 1500;
+    let successCount = 0;
+    
+    for (let i = 0; i < cardIds.length; i++) {
+      const cardId = cardIds[i];
+      
+      try {
+        // 获取卡片信息
+        const cardInfo = cards.value.find(c => c.id === cardId) || 
+                         allCards.value.find(c => c.id === cardId);
+        
+        if (!cardInfo) continue;
+        
+        // 使用 'all' 类型一次性生成名称、描述和标签
+        const genRes = await api.post('/api/ai/generate', {
+          type: 'all',
+          card: { 
+            name: cardInfo.title, 
+            url: cardInfo.url,
+            description: cardInfo.desc || ''
+          },
+          existingTags
+        });
+        
+        if (genRes.data.success) {
+          // 更新名称和描述
+          const updates = {};
+          if (genRes.data.name) updates.title = genRes.data.name;
+          if (genRes.data.description) updates.desc = genRes.data.description;
+          
+          if (Object.keys(updates).length > 0) {
+            await api.put(`/api/cards/${cardId}`, updates);
+          }
+          
+          // 更新标签
+          if (genRes.data.tags) {
+            const allTagNames = [
+              ...(genRes.data.tags.tags || []),
+              ...(genRes.data.tags.newTags || [])
+            ];
+            if (allTagNames.length > 0) {
+              await api.post('/api/ai/update-tags', {
+                cardId: cardId,
+                tags: allTagNames
+              });
+            }
+          }
+          
+          successCount++;
+        }
+        
+        // 延迟，避免触发限流
+        if (i < cardIds.length - 1) {
+          await new Promise(r => setTimeout(r, delay));
+        }
+      } catch (e) {
+        console.warn(`AI 生成失败 (卡片 ${cardId}):`, e);
+      }
+    }
+    
+    // 刷新卡片列表以显示新生成的内容
+    if (successCount > 0) {
+      await loadCards(true);
+      await loadAllTags();
+      showToastMessage(`✨ AI 已为 ${successCount} 个卡片生成名称、描述和标签`, 'success');
+    } else {
+      showToastMessage('', 'info', 0); // 清除提示
+    }
+  } catch (e) {
+    console.warn('自动 AI 生成失败:', e);
+    showToastMessage('', 'info', 0); // 清除提示
   }
 }
 
@@ -2895,12 +3007,29 @@ function toggleCardSelection(card) {
 
 
 // 显示 Toast 提示
-function showToastMessage(message, duration = 2000) {
+let toastTimer = null;
+function showToastMessage(message, type = 'success', duration = 2000) {
+  // 清除之前的定时器
+  if (toastTimer) {
+    clearTimeout(toastTimer);
+    toastTimer = null;
+  }
+  
+  // 如果消息为空，直接关闭
+  if (!message) {
+    showToast.value = false;
+    return;
+  }
+  
   toastMessage.value = message;
   showToast.value = true;
-  setTimeout(() => {
-    showToast.value = false;
-  }, duration);
+  
+  // duration 为 0 时不自动关闭
+  if (duration > 0) {
+    toastTimer = setTimeout(() => {
+      showToast.value = false;
+    }, duration);
+  }
 }
 
 // 显示进度弹窗
@@ -3124,7 +3253,7 @@ async function handleDeleteCard(card) {
 }
 
 // 编辑卡片
-function handleEditCard(card) {
+async function handleEditCard(card) {
   editingCard.value = card;
   cardEditForm.value = {
     title: card.title || '',
@@ -3135,6 +3264,19 @@ function handleEditCard(card) {
   };
   editError.value = '';
   showEditCardModal.value = true;
+  
+  // 检查 AI 配置状态
+  await checkAIConfig();
+}
+
+// 检查 AI 是否已配置
+async function checkAIConfig() {
+  try {
+    const res = await api.get('/api/ai/config');
+    aiConfigured.value = res.data.success && res.data.config.hasApiKey;
+  } catch (e) {
+    aiConfigured.value = false;
+  }
 }
 
 // 关闭卡片编辑模态框
@@ -3220,6 +3362,37 @@ async function createQuickTag() {
   }
 }
 
+// AI 生成名称
+async function generateAIName() {
+  if (!cardEditForm.value.url) {
+    showToastMessage('请先输入网址', 'error');
+    return;
+  }
+  
+  aiGeneratingName.value = true;
+  try {
+    const res = await api.post('/api/ai/generate', {
+      type: 'name',
+      card: {
+        name: cardEditForm.value.title || '',
+        url: cardEditForm.value.url
+      }
+    });
+    
+    if (res.data.success && res.data.name) {
+      cardEditForm.value.title = res.data.name;
+      showToastMessage('名称生成成功', 'success');
+    } else {
+      showToastMessage(res.data.message || 'AI 生成失败', 'error');
+    }
+  } catch (err) {
+    const msg = err.response?.data?.message || 'AI 服务不可用，请先在后台配置';
+    showToastMessage(msg, 'error');
+  } finally {
+    aiGeneratingName.value = false;
+  }
+}
+
 // AI 生成描述
 async function generateAIDescription() {
   if (!cardEditForm.value.url) {
@@ -3239,7 +3412,7 @@ async function generateAIDescription() {
     
     if (res.data.success && res.data.description) {
       cardEditForm.value.desc = res.data.description;
-      showToastMessage('描述生成成功');
+      showToastMessage('描述生成成功', 'success');
     } else {
       showToastMessage(res.data.message || 'AI 生成失败', 'error');
     }
@@ -3297,7 +3470,7 @@ async function generateAITags() {
         }
       }
       
-      showToastMessage('标签推荐成功');
+      showToastMessage('标签推荐成功', 'success');
     } else {
       showToastMessage(res.data.message || 'AI 推荐失败', 'error');
     }
@@ -3369,7 +3542,7 @@ async function saveCardEdit() {
       };
     }
     
-    showToastMessage('修改成功');
+    showToastMessage('修改成功', 'success');
     closeEditCardModal();
   } catch (error) {
     console.error('保存卡片失败:', error);
@@ -3392,8 +3565,23 @@ async function saveCardEdit() {
   left: 0;
   width: 100vw;
   z-index: 200;
-  /* background: rgba(0,0,0,0.6); /* 可根据需要调整 */
-  /* backdrop-filter: blur(8px);  /*  毛玻璃效果 */
+  /* PC端默认透明背景 */
+}
+
+/* 移动端菜单栏添加背景，防止与卡片重叠 */
+@media (max-width: 768px) {
+  .menu-bar-fixed {
+    top: 0;
+    padding-top: 0.6rem;
+    padding-bottom: 0.5rem;
+    background: linear-gradient(to bottom, 
+      rgba(0, 0, 0, 0.7) 0%, 
+      rgba(0, 0, 0, 0.5) 70%,
+      rgba(0, 0, 0, 0) 100%
+    );
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
 }
 
 /* 搜索引擎下拉选择器 */
@@ -4473,6 +4661,10 @@ async function saveCardEdit() {
   flex: 1;
 }
 
+.input-with-ai .batch-input {
+  flex: 1;
+}
+
 .ai-btn {
   padding: 8px 12px;
   border: 1px solid #e5e7eb;
@@ -4497,6 +4689,11 @@ async function saveCardEdit() {
 .ai-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.ai-btn-disabled {
+  background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%) !important;
+  cursor: not-allowed !important;
 }
 
 .ai-btn-inline {

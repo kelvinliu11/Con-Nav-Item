@@ -73,6 +73,14 @@
         <span class="hint">批量生成时的调用间隔，防止触发限流</span>
       </div>
 
+      <div class="form-group">
+        <label class="checkbox-label">
+          <input type="checkbox" v-model="config.autoGenerate" />
+          <span>添加卡片时自动生成名称、描述和标签</span>
+        </label>
+        <span class="hint">开启后，新添加的卡片会自动使用 AI 生成简洁的名称、描述和推荐标签</span>
+      </div>
+
       <div class="btn-group">
         <button class="btn btn-secondary" @click="testConnection" :disabled="testing">
           {{ testing ? '测试中...' : '🔗 测试连接' }}
@@ -186,6 +194,7 @@ export default {
         baseUrl: '',
         model: '',
         requestDelay: 1500,
+        autoGenerate: false,
         hasApiKey: false
       },
       showApiKey: false,
@@ -233,6 +242,7 @@ export default {
           this.config.baseUrl = cfg.baseUrl || '';
           this.config.model = cfg.model || '';
           this.config.requestDelay = cfg.requestDelay || 1500;
+          this.config.autoGenerate = cfg.autoGenerate || false;
         }
       } catch (e) {
         console.error('加载 AI 配置失败:', e);
@@ -251,7 +261,8 @@ export default {
           apiKey: this.config.apiKey || undefined,
           baseUrl: this.config.baseUrl || this.defaultBaseUrl,
           model: this.config.model || this.defaultModel,
-          requestDelay: this.config.requestDelay
+          requestDelay: this.config.requestDelay,
+          autoGenerate: this.config.autoGenerate
         });
         if (res.data.success) {
           this.showMessage('配置保存成功', 'success');
@@ -474,6 +485,21 @@ h3 {
   margin-top: 4px;
   font-size: 12px;
   color: var(--text-secondary, #6b7280);
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--primary-color, #3b82f6);
 }
 
 .btn-group {

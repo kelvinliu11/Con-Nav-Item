@@ -32,7 +32,8 @@ router.get('/config', authMiddleware, async (req, res) => {
         hasApiKey: !!config.apiKey,
         baseUrl: config.baseUrl || '',
         model: config.model || '',
-        requestDelay: config.requestDelay || 1500
+        requestDelay: config.requestDelay || 1500,
+        autoGenerate: config.autoGenerate === 'true' || config.autoGenerate === true
       }
     });
   } catch (error) {
@@ -44,7 +45,7 @@ router.get('/config', authMiddleware, async (req, res) => {
 // 保存 AI 配置
 router.post('/config', authMiddleware, async (req, res) => {
   try {
-    const { provider, apiKey, baseUrl, model, requestDelay } = req.body;
+    const { provider, apiKey, baseUrl, model, requestDelay, autoGenerate } = req.body;
     
     if (!provider || !AI_PROVIDERS[provider]) {
       return res.status(400).json({ success: false, message: '无效的 AI 提供商' });
@@ -77,7 +78,8 @@ router.post('/config', authMiddleware, async (req, res) => {
       apiKey: encryptedApiKey,
       baseUrl: baseUrl || '',
       model: model || '',
-      requestDelay: requestDelay || 1500
+      requestDelay: requestDelay || 1500,
+      autoGenerate: autoGenerate ? 'true' : 'false'
     });
     
     res.json({ success: true, message: 'AI 配置保存成功' });
@@ -154,13 +156,19 @@ router.post('/generate', authMiddleware, async (req, res) => {
     
     let result = {};
     
-    if (type === 'description' || type === 'both') {
+    if (type === 'name' || type === 'all') {
+      const namePrompt = buildNamePrompt(card);
+      const name = await callAI(config, namePrompt);
+      result.name = cleanName(name);
+    }
+    
+    if (type === 'description' || type === 'both' || type === 'all') {
       const descPrompt = buildDescriptionPrompt(card);
       const description = await callAI(config, descPrompt);
       result.description = cleanDescription(description);
     }
     
-    if (type === 'tags' || type === 'both') {
+    if (type === 'tags' || type === 'both' || type === 'all') {
       const tagsPrompt = buildTagsPrompt(card, existingTags || []);
       const tagsResponse = await callAI(config, tagsPrompt);
       result.tags = parseTagsResponse(tagsResponse, existingTags || []);
@@ -268,6 +276,49 @@ async function getDecryptedAIConfig() {
   }
   
   return config;
+}
+
+function buildNamePrompt(card) {
+  // 从 URL 提取域名
+  let domain = '';
+  try {
+    domain = new URL(card.url).hostname.replace('www.', '');
+  } catch (e) {
+    domain = card.url;
+  }
+  
+  return [
+    {
+      role: 'system',
+      content: `你是一个网站命名专家。你的任务是为导航站的网站卡片生成简洁、易记的名称。
+
+输出规则：
+- 直接输出名称，不要任何前缀、引号、标点符号
+- 字数控制在 2-8 个字符（中文）或 2-15 个字符（英文/品牌名）
+- 优先使用网站的官方品牌名或简称
+- 如果是知名网站，使用大众熟知的名称
+- 避免使用"官网"、"首页"等后缀`
+    },
+    {
+      role: 'user',
+      content: `请为这个网站生成一个简洁的名称：
+
+网站域名：${domain}
+完整地址：${card.url}
+当前标题：${card.name || '未知'}
+
+参考示例：
+- github.com → GitHub
+- baidu.com → 百度
+- chat.openai.com → ChatGPT
+- bilibili.com → B站
+- zhihu.com → 知乎
+- notion.so → Notion
+- figma.com → Figma
+
+请直接输出名称：`
+    }
+  ];
 }
 
 function buildDescriptionPrompt(card) {
@@ -389,6 +440,32 @@ function cleanDescription(text) {
   return cleaned;
 }
 
+function cleanName(text) {
+  if (!text) return '';
+  
+  let cleaned = text
+    // 移除 markdown 代码块
+    .replace(/```[\s\S]*?```/g, '')
+    // 移除首尾引号
+    .replace(/^["'「」『』""'']+|["'「」『』""'']+$/g, '')
+    // 移除常见前缀
+    .replace(/^(名称[：:]\s*|网站名[：:]\s*|Name[：:]\s*)/i, '')
+    // 移除换行符
+    .replace(/[\r\n]+/g, '')
+    // 移除多余空格
+    .replace(/\s+/g, ' ')
+    // 移除"官网"、"首页"等后缀
+    .replace(/(官网|首页|官方网站|Official|Home)$/i, '')
+    .trim();
+  
+  // 限制长度
+  if (cleaned.length > 20) {
+    cleaned = cleaned.substring(0, 20);
+  }
+  
+  return cleaned;
+}
+
 function parseTagsResponse(text, existingTags) {
   if (!text) return { tags: [], newTags: [] };
   
@@ -444,4 +521,87 @@ function parseTagsResponse(text, existingTags) {
   return { tags: [], newTags: [] };
 }
 
+// ==================== 自动 AI 生成（供其他模块调用） ====================
+
+/**
+ * 异步为新添加的卡片生成 AI 内容（名称、描述、标签）
+ * @param {number[]} cardIds - 卡片 ID 列表
+ */
+async function autoGenerateForCards(cardIds) {
+  try {
+    const config = await getDecryptedAIConfig();
+    
+    // 检查是否启用自动生成
+    const rawConfig = await db.getAIConfig();
+    if (rawConfig.autoGenerate !== 'true') {
+      return;
+    }
+    
+    if (!config.provider || !config.apiKey) {
+      return;
+    }
+    
+    console.log(`[AI] 开始为 ${cardIds.length} 个卡片自动生成内容...`);
+    
+    const existingTags = await db.getAllTagNames();
+    const delay = parseInt(rawConfig.requestDelay) || 1500;
+    
+    for (let i = 0; i < cardIds.length; i++) {
+      const cardId = cardIds[i];
+      
+      try {
+        // 获取卡片信息
+        const cards = await db.getCardsByIds([cardId]);
+        if (!cards || cards.length === 0) continue;
+        
+        const card = cards[0];
+        
+        // 生成名称
+        const namePrompt = buildNamePrompt({ name: card.name, url: card.url });
+        const name = await callAI(config, namePrompt);
+        const cleanedName = cleanName(name);
+        
+        // 生成描述
+        const descPrompt = buildDescriptionPrompt({ name: cleanedName || card.name, url: card.url });
+        const description = await callAI(config, descPrompt);
+        const cleanedDesc = cleanDescription(description);
+        
+        // 更新名称和描述
+        if (cleanedName || cleanedDesc) {
+          await db.updateCardNameAndDescription(cardId, cleanedName, cleanedDesc);
+        }
+        
+        // 生成标签
+        const tagsPrompt = buildTagsPrompt({ 
+          name: cleanedName || card.name, 
+          url: card.url, 
+          description: cleanedDesc || card.description 
+        }, existingTags);
+        const tagsResponse = await callAI(config, tagsPrompt);
+        const { tags, newTags } = parseTagsResponse(tagsResponse, existingTags);
+        
+        // 更新标签
+        const allTagNames = [...tags, ...newTags];
+        if (allTagNames.length > 0) {
+          await db.updateCardTags(cardId, allTagNames);
+        }
+        
+        console.log(`[AI] 卡片 ${cardId} 生成完成: ${cleanedName}`);
+        
+        // 延迟
+        if (i < cardIds.length - 1) {
+          await new Promise(r => setTimeout(r, delay));
+        }
+      } catch (e) {
+        console.warn(`[AI] 卡片 ${cardId} 生成失败:`, e.message);
+      }
+    }
+    
+    console.log(`[AI] 自动生成完成`);
+  } catch (e) {
+    console.error('[AI] 自动生成失败:', e);
+  }
+}
+
 module.exports = router;
+module.exports.autoGenerateForCards = autoGenerateForCards;

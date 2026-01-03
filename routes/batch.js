@@ -5,6 +5,7 @@ const db = require('../db');
 const auth = require('./authMiddleware');
 const { isDuplicateCard } = require('../utils/urlNormalizer');
 const { triggerDebouncedBackup } = require('../utils/autoBackup');
+const { autoGenerateForCards } = require('./ai');
 const router = express.Router();
 
 // 批量解析网址信息
@@ -313,6 +314,12 @@ router.post('/add', auth, (req, res) => {
                 completed++;
                 if (completed === uniqueCards.length) {
                   triggerDebouncedBackup(); // 触发数据变更通知和自动备份
+                  
+                  // 异步触发 AI 自动生成（不阻塞响应）
+                  if (insertedIds.length > 0) {
+                    setImmediate(() => autoGenerateForCards(insertedIds));
+                  }
+                  
                   res.json({ 
                     success: true, 
                     added: insertedIds.length,
@@ -326,6 +333,12 @@ router.post('/add', auth, (req, res) => {
               completed++;
               if (completed === uniqueCards.length) {
                 triggerDebouncedBackup(); // 触发数据变更通知和自动备份
+                
+                // 异步触发 AI 自动生成（不阻塞响应）
+                if (insertedIds.length > 0) {
+                  setImmediate(() => autoGenerateForCards(insertedIds));
+                }
+                
                 res.json({ 
                   success: true, 
                   added: insertedIds.length,

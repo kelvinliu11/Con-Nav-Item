@@ -536,7 +536,7 @@ async function getDataVersion() {
 // 获取 AI 配置
 async function getAIConfig() {
   try {
-    const keys = ['ai_provider', 'ai_api_key', 'ai_base_url', 'ai_model', 'ai_request_delay'];
+    const keys = ['ai_provider', 'ai_api_key', 'ai_base_url', 'ai_model', 'ai_request_delay', 'ai_auto_generate'];
     const rows = await dbAll(
       `SELECT key, value FROM settings WHERE key IN (${keys.map(() => '?').join(',')})`,
       keys
@@ -550,7 +550,8 @@ async function getAIConfig() {
         'ai_api_key': 'apiKey',
         'ai_base_url': 'baseUrl',
         'ai_model': 'model',
-        'ai_request_delay': 'requestDelay'
+        'ai_request_delay': 'requestDelay',
+        'ai_auto_generate': 'autoGenerate'
       };
       const configKey = keyMap[row.key];
       if (configKey) {
@@ -573,7 +574,8 @@ async function saveAIConfig(config) {
     apiKey: 'ai_api_key',
     baseUrl: 'ai_base_url',
     model: 'ai_model',
-    requestDelay: 'ai_request_delay'
+    requestDelay: 'ai_request_delay',
+    autoGenerate: 'ai_auto_generate'
   };
   
   for (const [key, dbKey] of Object.entries(mappings)) {
@@ -623,6 +625,27 @@ async function getAllTagNames() {
 async function updateCardDescription(cardId, description) {
   await dbRun('UPDATE cards SET desc = ? WHERE id = ?', [description, cardId]);
   await incrementDataVersion();
+}
+
+// 更新卡片名称和描述
+async function updateCardNameAndDescription(cardId, name, description) {
+  const updates = [];
+  const params = [];
+  
+  if (name) {
+    updates.push('title = ?');
+    params.push(name);
+  }
+  if (description) {
+    updates.push('desc = ?');
+    params.push(description);
+  }
+  
+  if (updates.length > 0) {
+    params.push(cardId);
+    await dbRun(`UPDATE cards SET ${updates.join(', ')} WHERE id = ?`, params);
+    await incrementDataVersion();
+  }
 }
 
 // 更新卡片标签
@@ -686,6 +709,7 @@ const dbWrapper = {
   getCardsByIds,
   getAllTagNames,
   updateCardDescription,
+  updateCardNameAndDescription,
   updateCardTags
 };
 
