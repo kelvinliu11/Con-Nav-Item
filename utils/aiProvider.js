@@ -122,7 +122,17 @@ async function callOpenAICompatible(config, messages) {
   const actualBaseUrl = baseUrl || providerConfig.baseUrl;
   const actualModel = model || providerConfig.defaultModel;
   
+  if (!actualBaseUrl) {
+    throw new Error('请配置 Base URL');
+  }
+  
+  if (!actualModel) {
+    throw new Error('请配置模型名称');
+  }
+  
   const url = `${actualBaseUrl.replace(/\/+$/, '')}/v1/chat/completions`;
+  
+  console.log('调用 OpenAI 兼容接口:', { url, model: actualModel });
   
   const response = await fetch(url, {
     method: 'POST',

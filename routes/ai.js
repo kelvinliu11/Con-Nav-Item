@@ -92,8 +92,31 @@ router.post('/test', authMiddleware, async (req, res) => {
   try {
     const config = await getDecryptedAIConfig();
     
+    console.log('AI 测试 - 配置:', { 
+      provider: config.provider, 
+      hasApiKey: !!config.apiKey,
+      baseUrl: config.baseUrl,
+      model: config.model
+    });
+    
     if (!config.provider) {
       return res.status(400).json({ success: false, message: '请先配置 AI 服务' });
+    }
+    
+    // 检查必要的配置
+    const { AI_PROVIDERS } = require('../utils/aiProvider');
+    const providerConfig = AI_PROVIDERS[config.provider];
+    
+    if (!providerConfig) {
+      return res.status(400).json({ success: false, message: `不支持的提供商: ${config.provider}` });
+    }
+    
+    if (providerConfig.needsApiKey && !config.apiKey) {
+      return res.status(400).json({ success: false, message: '请先配置 API Key' });
+    }
+    
+    if (providerConfig.needsBaseUrl && !config.baseUrl) {
+      return res.status(400).json({ success: false, message: '请先配置 Base URL' });
     }
     
     const messages = [
@@ -106,7 +129,7 @@ router.post('/test', authMiddleware, async (req, res) => {
     res.json({ 
       success: true, 
       message: '连接测试成功',
-      response: result.substring(0, 100)
+      response: result ? result.substring(0, 100) : '(空响应)'
     });
   } catch (error) {
     console.error('AI 连接测试失败:', error);

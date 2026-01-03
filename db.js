@@ -544,12 +544,23 @@ async function getAIConfig() {
     
     const config = {};
     for (const row of rows) {
-      const key = row.key.replace('ai_', '');
-      config[key === 'request_delay' ? 'requestDelay' : key] = row.value;
+      // 映射数据库 key 到配置 key
+      const keyMap = {
+        'ai_provider': 'provider',
+        'ai_api_key': 'apiKey',
+        'ai_base_url': 'baseUrl',
+        'ai_model': 'model',
+        'ai_request_delay': 'requestDelay'
+      };
+      const configKey = keyMap[row.key];
+      if (configKey) {
+        config[configKey] = row.value;
+      }
     }
     
     return config;
   } catch (e) {
+    console.error('获取 AI 配置失败:', e);
     // settings 表可能不存在
     return {};
   }
