@@ -37,7 +37,6 @@ router.get('/config', authMiddleware, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('获取 AI 配置失败:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -84,7 +83,6 @@ router.post('/config', authMiddleware, async (req, res) => {
     
     res.json({ success: true, message: 'AI 配置保存成功' });
   } catch (error) {
-    console.error('保存 AI 配置失败:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -93,13 +91,6 @@ router.post('/config', authMiddleware, async (req, res) => {
 router.post('/test', authMiddleware, async (req, res) => {
   try {
     const config = await getDecryptedAIConfig();
-    
-    console.log('AI 测试 - 配置:', { 
-      provider: config.provider, 
-      hasApiKey: !!config.apiKey,
-      baseUrl: config.baseUrl,
-      model: config.model
-    });
     
     if (!config.provider) {
       return res.status(400).json({ success: false, message: '请先配置 AI 服务' });
@@ -134,7 +125,6 @@ router.post('/test', authMiddleware, async (req, res) => {
       response: result ? result.substring(0, 100) : '(空响应)'
     });
   } catch (error) {
-    console.error('AI 连接测试失败:', error);
     res.status(500).json({ success: false, message: `连接失败: ${error.message}` });
   }
 });
@@ -176,7 +166,6 @@ router.post('/generate', authMiddleware, async (req, res) => {
     
     res.json({ success: true, ...result });
   } catch (error) {
-    console.error('AI 生成失败:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -188,7 +177,6 @@ router.get('/empty-cards', authMiddleware, async (req, res) => {
     const cards = await db.getCardsNeedingAI(type || 'both');
     res.json({ success: true, cards, total: cards.length });
   } catch (error) {
-    console.error('获取待处理卡片失败:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -221,7 +209,6 @@ router.post('/batch-generate', authMiddleware, async (req, res) => {
       requestDelay: config.requestDelay || 1500
     });
   } catch (error) {
-    console.error('批量生成准备失败:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -238,7 +225,6 @@ router.post('/update-description', authMiddleware, async (req, res) => {
     await db.updateCardDescription(cardId, description);
     res.json({ success: true, message: '描述更新成功' });
   } catch (error) {
-    console.error('更新描述失败:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -255,7 +241,6 @@ router.post('/update-tags', authMiddleware, async (req, res) => {
     await db.updateCardTags(cardId, tags);
     res.json({ success: true, message: '标签更新成功' });
   } catch (error) {
-    console.error('更新标签失败:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -270,8 +255,7 @@ async function getDecryptedAIConfig() {
       const encrypted = JSON.parse(config.apiKey);
       config.apiKey = decrypt(encrypted.encrypted, encrypted.iv, encrypted.authTag);
     } catch (e) {
-      // 可能是未加密的旧数据
-      console.warn('API Key 解密失败，可能是未加密的旧数据');
+      // 可能是未加密的旧数据，静默处理
     }
   }
   
@@ -305,7 +289,7 @@ function buildNamePrompt(card) {
 
 网站域名：${domain}
 完整地址：${card.url}
-当前标题：${card.name || '未知'}
+当前标题：${card.title || '未知'}
 
 参考示例：
 - github.com → GitHub
@@ -345,7 +329,7 @@ function buildDescriptionPrompt(card) {
       role: 'user',
       content: `请为这个网站生成描述：
 
-网站名称：${card.name || '未知'}
+网站名称：${card.title || '未知'}
 网站域名：${domain}
 完整地址：${card.url}
 
@@ -393,9 +377,9 @@ function buildTagsPrompt(card, existingTags) {
       role: 'user',
       content: `请为这个网站推荐标签：
 
-网站名称：${card.name || '未知'}
+网站名称：${card.title || '未知'}
 网站域名：${domain}
-网站描述：${card.description || '暂无描述'}
+网站描述：${card.desc || '暂无描述'}
 
 现有标签库：
 ${tagsStr}
@@ -492,7 +476,7 @@ function parseTagsResponse(text, existingTags) {
       return { tags, newTags };
     }
   } catch (e) {
-    console.warn('标签 JSON 解析失败:', e.message);
+    // JSON 解析失败，尝试降级处理
   }
   
   // 降级处理：尝试从文本中提取标签
@@ -515,7 +499,7 @@ function parseTagsResponse(text, existingTags) {
       };
     }
   } catch (e) {
-    console.warn('标签降级解析失败:', e.message);
+    // 降级解析也失败，返回空结果
   }
   
   return { tags: [], newTags: [] };
@@ -537,24 +521,18 @@ async function autoGenerateForCards(cardIds) {
     // 检查是否启用自动生成
     const rawConfig = await db.getAIConfig();
     if (rawConfig.autoGenerate !== 'true') {
-      console.log('[AI] 自动生成未启用，跳过');
       return;
     }
     
     if (!config.provider || !config.apiKey) {
-      console.log('[AI] AI 提供商未配置，跳过自动生成');
       return;
     }
     
     // 检查 baseUrl（如果提供商需要）
-    const { AI_PROVIDERS } = require('../utils/aiProvider');
     const providerConfig = AI_PROVIDERS[config.provider];
     if (providerConfig && providerConfig.needsBaseUrl && !config.baseUrl) {
-      console.log('[AI] Base URL 未配置，跳过自动生成');
       return;
     }
-    
-    console.log(`[AI] 开始为 ${cardIds.length} 个卡片自动生成内容...`);
     
     const existingTags = await db.getAllTagNames();
     const delay = parseInt(rawConfig.requestDelay) || 1500;
@@ -569,48 +547,42 @@ async function autoGenerateForCards(cardIds) {
         if (!cards || cards.length === 0) continue;
         
         const card = cards[0];
-        let updatedName = null;
+        let updatedTitle = null;
         let updatedDesc = null;
         
-        // 生成名称（仅当原名称看起来像自动生成的域名时）
+        // 生成名称
         try {
-          const namePrompt = buildNamePrompt({ name: card.name, url: card.url });
-          const name = await callAI(config, namePrompt);
-          updatedName = cleanName(name);
-          if (!updatedName) {
-            console.log(`[AI] 卡片 ${cardId} 名称生成为空，保留原名称`);
-          }
+          const namePrompt = buildNamePrompt({ title: card.title, url: card.url });
+          const title = await callAI(config, namePrompt);
+          updatedTitle = cleanName(title);
         } catch (e) {
-          console.warn(`[AI] 卡片 ${cardId} 名称生成失败，保留原名称:`, e.message);
+          // 名称生成失败，保留原名称
         }
         
         // 生成描述
         try {
           const descPrompt = buildDescriptionPrompt({ 
-            name: updatedName || card.name, 
+            title: updatedTitle || card.title, 
             url: card.url 
           });
-          const description = await callAI(config, descPrompt);
-          updatedDesc = cleanDescription(description);
-          if (!updatedDesc) {
-            console.log(`[AI] 卡片 ${cardId} 描述生成为空，保留原描述`);
-          }
+          const desc = await callAI(config, descPrompt);
+          updatedDesc = cleanDescription(desc);
         } catch (e) {
-          console.warn(`[AI] 卡片 ${cardId} 描述生成失败，保留原描述:`, e.message);
+          // 描述生成失败，保留原描述
         }
         
         // 更新名称和描述（仅更新成功生成的字段）
-        if (updatedName || updatedDesc) {
-          await db.updateCardNameAndDescription(cardId, updatedName, updatedDesc);
+        if (updatedTitle || updatedDesc) {
+          await db.updateCardNameAndDescription(cardId, updatedTitle, updatedDesc);
           hasUpdates = true;
         }
         
         // 生成标签
         try {
           const tagsPrompt = buildTagsPrompt({ 
-            name: updatedName || card.name, 
+            title: updatedTitle || card.title, 
             url: card.url, 
-            description: updatedDesc || card.description 
+            desc: updatedDesc || card.desc 
           }, existingTags);
           const tagsResponse = await callAI(config, tagsPrompt);
           const { tags, newTags } = parseTagsResponse(tagsResponse, existingTags);
@@ -622,17 +594,15 @@ async function autoGenerateForCards(cardIds) {
             hasUpdates = true;
           }
         } catch (e) {
-          console.warn(`[AI] 卡片 ${cardId} 标签生成失败:`, e.message);
+          // 标签生成失败，跳过
         }
-        
-        console.log(`[AI] 卡片 ${cardId} 处理完成: ${updatedName || card.name}`);
         
         // 延迟（避免 API 限流）
         if (i < cardIds.length - 1) {
           await new Promise(r => setTimeout(r, delay));
         }
       } catch (e) {
-        console.warn(`[AI] 卡片 ${cardId} 处理失败:`, e.message);
+        // 单个卡片处理失败，继续处理下一个
       }
     }
     
@@ -640,10 +610,8 @@ async function autoGenerateForCards(cardIds) {
     if (hasUpdates) {
       triggerDebouncedBackup();
     }
-    
-    console.log(`[AI] 自动生成完成`);
   } catch (e) {
-    console.error('[AI] 自动生成失败:', e);
+    // 自动生成整体失败，静默处理
   }
 }
 

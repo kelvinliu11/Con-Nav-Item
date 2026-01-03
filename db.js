@@ -590,7 +590,7 @@ async function saveAIConfig(config) {
 
 // 获取需要 AI 处理的卡片
 async function getCardsNeedingAI(type) {
-  let sql = 'SELECT c.id, c.title as name, c.url, c.desc as description FROM cards c';
+  let sql = 'SELECT c.id, c.title, c.url, c.desc FROM cards c';
   
   if (type === 'description') {
     sql += " WHERE c.desc IS NULL OR c.desc = ''";
@@ -610,7 +610,7 @@ async function getCardsByIds(ids) {
   if (!ids || ids.length === 0) return [];
   const placeholders = ids.map(() => '?').join(',');
   return await dbAll(
-    `SELECT id, title as name, url, desc as description FROM cards WHERE id IN (${placeholders})`,
+    `SELECT id, title, url, desc FROM cards WHERE id IN (${placeholders})`,
     ids
   );
 }

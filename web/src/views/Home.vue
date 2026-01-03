@@ -2513,9 +2513,9 @@ async function autoGenerateAIForNewCards(cardIds) {
         const genRes = await api.post('/api/ai/generate', {
           type: 'all',
           card: { 
-            name: cardInfo.title, 
+            title: cardInfo.title, 
             url: cardInfo.url,
-            description: cardInfo.desc || ''
+            desc: cardInfo.desc || ''
           },
           existingTags
         });
@@ -3380,7 +3380,7 @@ async function generateAIName() {
     const res = await api.post('/api/ai/generate', {
       type: 'name',
       card: {
-        name: cardEditForm.value.title || '',
+        title: cardEditForm.value.title || '',
         url: cardEditForm.value.url
       }
     });
@@ -3411,7 +3411,7 @@ async function generateAIDescription() {
     const res = await api.post('/api/ai/generate', {
       type: 'description',
       card: {
-        name: cardEditForm.value.title || '',
+        title: cardEditForm.value.title || '',
         url: cardEditForm.value.url
       }
     });
@@ -3443,9 +3443,9 @@ async function generateAITags() {
     const res = await api.post('/api/ai/generate', {
       type: 'tags',
       card: {
-        name: cardEditForm.value.title || '',
+        title: cardEditForm.value.title || '',
         url: cardEditForm.value.url,
-        description: cardEditForm.value.desc || ''
+        desc: cardEditForm.value.desc || ''
       },
       existingTags
     });

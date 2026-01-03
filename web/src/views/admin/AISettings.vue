@@ -332,7 +332,7 @@ export default {
 
           const card = cards[i];
           this.batchProgress.current = i + 1;
-          this.batchProgress.currentCard = card.name || card.url;
+          this.batchProgress.currentCard = card.title || card.url;
 
           try {
             // 调用 AI 生成
@@ -362,7 +362,7 @@ export default {
               }
             }
           } catch (e) {
-            console.error(`处理卡片 ${card.name} 失败:`, e);
+            console.error(`处理卡片 ${card.title} 失败:`, e);
           }
 
           // 延迟
