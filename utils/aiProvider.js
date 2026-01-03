@@ -132,8 +132,6 @@ async function callOpenAICompatible(config, messages) {
   
   const url = `${actualBaseUrl.replace(/\/+$/, '')}/v1/chat/completions`;
   
-  console.log('调用 OpenAI 兼容接口:', { url, model: actualModel });
-  
   const response = await fetch(url, {
     method: 'POST',
     headers: {

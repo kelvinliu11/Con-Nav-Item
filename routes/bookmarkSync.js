@@ -171,16 +171,13 @@ function getLastBackupHash(deviceName) {
             });
         
         if (files.length === 0) {
-            console.log(`[书签备份] 未找到设备 ${safeDeviceName} 的历史备份`);
             return null;
         }
         
         const lastFile = path.join(BOOKMARKS_DIR, files[0]);
         const data = JSON.parse(fs.readFileSync(lastFile, 'utf-8'));
-        console.log(`[书签备份] 上次备份: ${files[0]}, 哈希: ${data.contentHash}`);
         return data.contentHash || null;
     } catch (e) {
-        console.error('[书签备份] 获取上次备份哈希失败:', e.message);
         return null;
     }
 }
@@ -240,12 +237,10 @@ async function cleanOldBackups(deviceName, type) {
             fs.unlinkSync(filePath);
             // 同时从WebDAV删除
             deleteBookmarkFromWebDAV(file).catch(() => {});
-            console.log(`[书签备份] 已清理过期备份: ${file}`);
         }
         
         return toDelete.length;
     } catch (e) {
-        console.error('[书签备份] 清理失败:', e.message);
         return 0;
     }
 }
@@ -268,7 +263,6 @@ async function getWebDAVClient() {
             password: webdavConfig.password
         });
     } catch (e) {
-        console.error('WebDAV客户端创建失败:', e.message);
         return null;
     }
 }
@@ -284,10 +278,8 @@ async function syncBookmarkToWebDAV(filename, content) {
         
         const remotePath = `${WEBDAV_BOOKMARK_DIR}/${filename}`;
         await client.putFileContents(remotePath, content);
-        console.log(`[书签备份] 已同步到WebDAV: ${filename}`);
         return true;
     } catch (error) {
-        console.error('[书签备份] WebDAV同步失败:', error.message);
         return false;
     }
 }
@@ -398,14 +390,11 @@ router.post('/upload', bookmarkSyncLimiter, flexAuthMiddleware, async (req, res)
         
         // 计算内容哈希
         const contentHash = calculateBookmarkHash(bookmarks);
-        console.log(`[书签备份] 当前内容哈希: ${contentHash}, 类型: ${type}, skipIfSame: ${skipIfSame}`);
         
         // 检查是否与上次备份相同
         if (skipIfSame && type !== 'manual') {
             const lastHash = getLastBackupHash(deviceName);
-            console.log(`[书签备份] 对比哈希 - 当前: ${contentHash}, 上次: ${lastHash}`);
             if (lastHash && lastHash === contentHash) {
-                console.log('[书签备份] 内容无变化，跳过备份');
                 return res.json({
                     success: true,
                     message: '书签无变化，跳过备份',
@@ -421,7 +410,6 @@ router.post('/upload', bookmarkSyncLimiter, flexAuthMiddleware, async (req, res)
         // 检查同名文件是否存在（同一时间段的备份）
         if (fs.existsSync(filePath) && type !== 'manual') {
             // 更新现有文件而不是创建新文件
-            console.log(`[书签备份] 更新现有备份: ${filename}`);
         }
         
         // 统计书签数量
@@ -474,7 +462,6 @@ router.post('/upload', bookmarkSyncLimiter, flexAuthMiddleware, async (req, res)
         });
         
     } catch (error) {
-        console.error('书签备份失败:', error);
         res.status(500).json({ success: false, message: '书签备份失败: ' + error.message });
     }
 });
@@ -516,7 +503,6 @@ router.get('/list', async (req, res) => {
         res.json({ success: true, backups: files });
         
     } catch (error) {
-        console.error('获取书签备份列表失败:', error);
         res.status(500).json({ success: false, message: '获取列表失败: ' + error.message });
     }
 });
@@ -548,7 +534,6 @@ router.get('/download/:filename', async (req, res) => {
         res.json({ success: true, backup: data });
         
     } catch (error) {
-        console.error('获取书签备份失败:', error);
         res.status(500).json({ success: false, message: '获取备份失败: ' + error.message });
     }
 });
@@ -577,7 +562,6 @@ router.get('/latest', async (req, res) => {
         res.json({ success: true, backup: data });
         
     } catch (error) {
-        console.error('获取最新书签备份失败:', error);
         res.status(500).json({ success: false, message: '获取备份失败: ' + error.message });
     }
 });
@@ -612,7 +596,6 @@ router.delete('/delete/:filename', flexAuthMiddleware, async (req, res) => {
         res.json({ success: true, message: '删除成功（WebDAV备份已保留）' });
         
     } catch (error) {
-        console.error('删除书签备份失败:', error);
         res.status(500).json({ success: false, message: '删除失败: ' + error.message });
     }
 });
@@ -702,7 +685,6 @@ router.get('/webdav/list', async (req, res) => {
         res.json({ success: true, backups });
 
     } catch (error) {
-        console.error('获取WebDAV书签备份列表失败:', error);
         res.status(500).json({ success: false, message: error.message, backups: [] });
     }
 });
@@ -739,7 +721,6 @@ router.get('/webdav/download/:filename', async (req, res) => {
         res.json({ success: true, backup: data, source: 'webdav' });
 
     } catch (error) {
-        console.error('从WebDAV下载书签备份失败:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 });
@@ -765,7 +746,6 @@ router.delete('/webdav/delete/:filename', flexAuthMiddleware, async (req, res) =
         res.json({ success: true, message: '删除成功' });
 
     } catch (error) {
-        console.error('从WebDAV删除书签备份失败:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 });
@@ -811,9 +791,8 @@ router.post('/webdav/sync-to-local', flexAuthMiddleware, async (req, res) => {
                 const localPath = path.join(BOOKMARKS_DIR, filename);
                 fs.writeFileSync(localPath, content);
                 synced++;
-                console.log(`[书签备份] 从WebDAV同步: ${filename}`);
             } catch (e) {
-                console.error(`[书签备份] 同步失败: ${filename}`, e.message);
+                // 同步失败，忽略
             }
         }
 
@@ -825,7 +804,6 @@ router.post('/webdav/sync-to-local', flexAuthMiddleware, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('从WebDAV同步备份失败:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 });
@@ -872,7 +850,7 @@ router.post('/webdav/sync-to-webdav', flexAuthMiddleware, async (req, res) => {
                 await client.putFileContents(remotePath, content);
                 synced++;
             } catch (e) {
-                console.error(`[书签备份] 同步到WebDAV失败: ${filename}`, e.message);
+                // 同步失败，忽略
             }
         }
 
@@ -884,7 +862,6 @@ router.post('/webdav/sync-to-webdav', flexAuthMiddleware, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('同步到WebDAV失败:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 });

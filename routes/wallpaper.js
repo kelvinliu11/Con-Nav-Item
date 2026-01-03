@@ -38,7 +38,6 @@ router.get('/random', wallpaperLimiter, async (req, res) => {
     }
 
   } catch (error) {
-    console.error('Unsplash request failed, using fallback:', error.message);
     try {
       // 备用方案：从预选的自然风景图片 ID 中随机选择
       const randomId = NATURE_PHOTO_IDS[Math.floor(Math.random() * NATURE_PHOTO_IDS.length)];

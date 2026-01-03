@@ -52,7 +52,6 @@ function loadConfig() {
     saveConfig(DEFAULT_CONFIG);
     return DEFAULT_CONFIG;
   } catch (error) {
-    console.error('[\u81ea\u52a8\u5907\u4efd] \u914d\u7f6e\u52a0\u8f7d\u5931\u8d25:', error.message);
     return DEFAULT_CONFIG;
   }
 }
@@ -67,7 +66,6 @@ function saveConfig(newConfig) {
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(newConfig, null, 2));
     return true;
   } catch (error) {
-    console.error('[\u81ea\u52a8\u5907\u4efd] \u914d\u7f6e\u4fdd\u5b58\u5931\u8d25:', error.message);
     return false;
   }
 }
@@ -128,7 +126,7 @@ async function createBackupFile(prefix = 'auto') {
             zip.writeZip(backupPath);
           }
         } catch (sigErr) {
-          console.warn('[自动备份] 签名生成失败:', sigErr.message);
+          // 签名生成失败，忽略
         }
         
         const stats = fs.statSync(backupPath);
@@ -141,7 +139,6 @@ async function createBackupFile(prefix = 'auto') {
       });
       
       archive.on('error', (err) => {
-        console.error('[自动备份] 创建失败:', err);
         reject(err);
       });
       
@@ -182,7 +179,6 @@ async function createBackupFile(prefix = 'auto') {
       
       archive.finalize();
     } catch (error) {
-      console.error('[自动备份] 创建失败:', error);
       reject(error);
     }
   });
@@ -201,7 +197,6 @@ async function getWebDAVClient() {
   const webdavConfig = decryptWebDAVConfig(encryptedConfig);
   
   if (!webdavConfig) {
-    console.error('[自动备份] WebDAV配置解密失败');
     return null;
   }
   
@@ -236,10 +231,8 @@ async function syncToWebDAV(backupPath, backupName, retries = 2) {
       return true;
     } catch (error) {
       if (attempt < retries) {
-        console.warn(`[自动备份] WebDAV同步失败，重试 ${attempt + 1}/${retries}...`);
-        await new Promise(r => setTimeout(r, 2000)); // 等待2秒后重试
+        await new Promise(r => setTimeout(r, 2000));
       } else {
-        console.error('[自动备份] WebDAV同步失败:', error.message);
         return false;
       }
     }
@@ -278,15 +271,11 @@ async function cleanWebDAVBackups(prefix, keepCount) {
         await client.deleteFile(backups[i].filename);
         deletedCount++;
       } catch (e) {
-        console.error(`[自动备份] 删除WebDAV备份失败: ${backups[i].filename}`);
+        // 删除失败，忽略
       }
     }
-    
-    if (deletedCount > 0) {
-      console.log(`[自动备份] 已清理 ${deletedCount} 个WebDAV过期备份`);
-    }
   } catch (error) {
-    console.error('[自动备份] WebDAV清理失败:', error.message);
+    // WebDAV清理失败，忽略
   }
 }
 
@@ -317,7 +306,7 @@ function cleanOldBackups(prefix, keepCount) {
     if (deletedCount > 0) {
     }
   } catch (error) {
-    console.error('[自动备份] 清理失败:', error);
+    // 清理失败，忽略
   }
 }
 
@@ -335,7 +324,7 @@ async function notifyDataChange() {
     // 立即广播给所有客户端
     broadcastVersionChange(newVersion);
   } catch (err) {
-    console.error('[数据变更通知] 版本号更新失败:', err);
+    // 版本号更新失败，忽略
   }
 }
 
@@ -361,17 +350,12 @@ async function triggerDebouncedBackup() {
     try {
       const result = await createBackupFile('incremental');
       lastDebounceBackupTime = Date.now();
-      console.log(`[自动备份] 增量备份完成: ${result.name} (${result.size} MB)`);
       
       // 同步到WebDAV（如果启用）
       if (config.webdav && config.webdav.enabled && config.webdav.syncIncremental) {
         const synced = await syncToWebDAV(result.path, result.name);
-        if (synced) {
-          console.log(`[自动备份] 已同步到WebDAV: ${result.name}`);
-          // 清理WebDAV上的过期备份
-          if (config.autoClean) {
-            await cleanWebDAVBackups('incremental', config.debounce.keep);
-          }
+        if (synced && config.autoClean) {
+          await cleanWebDAVBackups('incremental', config.debounce.keep);
         }
       }
       
@@ -381,9 +365,9 @@ async function triggerDebouncedBackup() {
       }
       
     } catch (error) {
-      console.error('[自动备份] 防抖备份失败:', error);
+      // 防抖备份失败，忽略
     }
-  }, config.debounce.delay * 60 * 1000); // 转换为毫�?
+  }, config.debounce.delay * 60 * 1000);
 }
 
 /**
@@ -406,26 +390,19 @@ function startScheduledBackup() {
       // 如果启用了"仅在有修改时备份"，检查是否有最近的增量备份
       if (config.scheduled.onlyIfModified && lastDebounceBackupTime) {
         const hoursSinceLastBackup = (Date.now() - lastDebounceBackupTime) / (1000 * 60 * 60);
-        // 如果24小时内有增量备份，跳过定时备份
         if (hoursSinceLastBackup < 24) {
-          console.log('[自动备份] 24小时内已有增量备份，跳过定时备份');
           return;
         }
       }
       
       const result = await createBackupFile('daily');
       lastScheduledBackupTime = Date.now();
-      console.log(`[自动备份] 定时备份完成: ${result.name} (${result.size} MB)`);
       
       // 同步到WebDAV（如果启用）
       if (config.webdav && config.webdav.enabled && config.webdav.syncDaily) {
         const synced = await syncToWebDAV(result.path, result.name);
-        if (synced) {
-          console.log(`[自动备份] 已同步到WebDAV: ${result.name}`);
-          // 清理WebDAV上的过期备份
-          if (config.autoClean) {
-            await cleanWebDAVBackups('daily', config.scheduled.keep);
-          }
+        if (synced && config.autoClean) {
+          await cleanWebDAVBackups('daily', config.scheduled.keep);
         }
       }
       
@@ -435,7 +412,7 @@ function startScheduledBackup() {
       }
       
     } catch (error) {
-      console.error('[自动备份] 定时备份失败:', error);
+      // 定时备份失败，忽略
     }
   });
   
@@ -494,25 +471,21 @@ function getBackupStats() {
       nextScheduled: scheduledJob ? scheduledJob.nextInvocation()?.toISOString() : null
     };
   } catch (error) {
-    console.error('[自动备份] 获取统计信息失败:', error);
     return null;
   }
 }
 
 /**
- * 更新配置并重启定时任�?
+ * 更新配置并重启定时任务
  */
 function updateConfig(newConfig) {
   try {
-    // 合并配置
     config = { ...config, ...newConfig };
     
-    // 保存到文�?
     if (!saveConfig(config)) {
       return { success: false, message: '配置保存失败' };
     }
     
-    // 重启定时任务
     if (config.scheduled.enabled) {
       startScheduledBackup();
     } else if (scheduledJob) {
@@ -522,7 +495,6 @@ function updateConfig(newConfig) {
     
     return { success: true, message: '配置更新成功' };
   } catch (error) {
-    console.error('[自动备份] 配置更新失败:', error);
     return { success: false, message: error.message };
   }
 }

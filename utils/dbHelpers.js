@@ -101,7 +101,6 @@ function dbRun(sql, params = []) {
  * 标准化错误响应
  */
 function handleError(res, error, message = '操作失败') {
-  console.error(message + ':', error);
   res.status(500).json({ error: message, details: error.message });
 }
 

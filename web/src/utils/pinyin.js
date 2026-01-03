@@ -34,7 +34,6 @@ export function getPinyinInfo(text) {
       first: firstLetters
     };
   } catch (error) {
-    console.error('拼音转换错误:', error);
     return { full: '', first: '' };
   }
 }

@@ -15,7 +15,6 @@ router.get('/', (req, res) => {
   // 设置 20 秒超时保护
   const timeout = setTimeout(() => {
     if (!res.headersSent) {
-      console.error('GET /api/menus 超时');
       res.status(504).json({ error: '请求超时' });
     }
   }, 20000);

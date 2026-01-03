@@ -27,7 +27,6 @@ function normalizeUrl(url) {
     
     return normalized;
   } catch (error) {
-    console.error('URL 规范化失败:', error);
     return url.toLowerCase();
   }
 }
@@ -50,7 +49,6 @@ function extractDomain(url) {
     const domain = normalized.split('/')[0].split('?')[0].split('#')[0];
     return domain;
   } catch (error) {
-    console.error('域名提取失败:', error);
     return '';
   }
 }

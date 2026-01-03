@@ -48,7 +48,6 @@ function getSecretFromDatabase() {
       });
     });
   } catch (e) {
-    console.warn('从数据库读取密钥失败:', e.message);
     return Promise.resolve(null);
   }
 }
@@ -90,7 +89,6 @@ function saveSecretToDatabase(secret) {
       });
     });
   } catch (e) {
-    console.warn('保存密钥到数据库失败:', e.message);
     return Promise.resolve();
   }
 }
@@ -121,7 +119,7 @@ function getCryptoSecretSync() {
       }
     }
   } catch (e) {
-    console.warn('读取密钥文件失败:', e.message);
+    // 忽略文件读取失败
   }
   
   // 3. 尝试同步读取数据库（最后的备选方案）
@@ -134,7 +132,6 @@ function getCryptoSecretSync() {
         if (row && row.value && row.value.length >= 32) {
           cachedSecret = row.value;
           db.close();
-          console.log('✓ 同步从数据库加载加密密钥');
           return cachedSecret;
         }
       } catch (e) {
@@ -147,7 +144,6 @@ function getCryptoSecretSync() {
   }
   
   // 4. 生成新密钥（临时使用，会在异步初始化时保存到数据库）
-  console.warn('⚠️ 生成临时加密密钥，WebDAV配置可能需要重新设置');
   const newSecret = crypto.randomBytes(32).toString('hex');
   cachedSecret = newSecret;
   
@@ -159,7 +155,7 @@ function getCryptoSecretSync() {
     }
     fs.writeFileSync(CRYPTO_SECRET_PATH, newSecret, { mode: 0o600 });
   } catch (e) {
-    console.warn('保存密钥文件失败:', e.message);
+    // 忽略文件写入失败
   }
   
   return newSecret;
@@ -172,7 +168,6 @@ async function initCryptoSecret() {
   // 1. 优先使用环境变量
   if (process.env.CRYPTO_SECRET) {
     cachedSecret = process.env.CRYPTO_SECRET;
-    console.log('✓ 使用环境变量中的加密密钥');
     return cachedSecret;
   }
   
@@ -181,7 +176,6 @@ async function initCryptoSecret() {
     const dbSecret = await getSecretFromDatabase();
     if (dbSecret && dbSecret.length >= 32) {
       cachedSecret = dbSecret;
-      console.log('✓ 从数据库加载加密密钥');
       
       // 同步到文件（作为备用）
       try {
@@ -197,7 +191,7 @@ async function initCryptoSecret() {
       return cachedSecret;
     }
   } catch (e) {
-    console.warn('从数据库读取密钥失败:', e.message);
+    // 忽略数据库读取失败
   }
   
   // 3. 尝试从文件读取（兼容旧版本，并迁移到数据库）
@@ -210,16 +204,15 @@ async function initCryptoSecret() {
         // 迁移到数据库
         try {
           await saveSecretToDatabase(fileSecret);
-          console.log('✓ 已将加密密钥从文件迁移到数据库');
         } catch (e) {
-          console.warn('迁移密钥到数据库失败:', e.message);
+          // 忽略迁移失败
         }
         
         return cachedSecret;
       }
     }
   } catch (e) {
-    console.warn('读取密钥文件失败:', e.message);
+    // 忽略文件读取失败
   }
   
   // 4. 生成新密钥并保存到数据库
@@ -228,9 +221,8 @@ async function initCryptoSecret() {
   
   try {
     await saveSecretToDatabase(newSecret);
-    console.log('✓ 已生成新的加密密钥并保存到数据库');
   } catch (e) {
-    console.warn('保存新密钥到数据库失败:', e.message);
+    // 忽略保存失败
   }
   
   // 同时保存到文件（作为备用）
@@ -301,7 +293,6 @@ function decrypt(encrypted, iv, authTag) {
     
     return decrypted;
   } catch (error) {
-    console.error('解密失败:', error.message);
     return null;
   }
 }

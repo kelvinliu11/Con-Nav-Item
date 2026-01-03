@@ -11,12 +11,10 @@ const clients = new Set();
  */
 function addClient(res) {
   clients.add(res);
-  console.log(`[SSE] 客户端连接，当前连接数: ${clients.size}`);
   
   // 客户端断开时移除
   res.on('close', () => {
     clients.delete(res);
-    console.log(`[SSE] 客户端断开，当前连接数: ${clients.size}`);
   });
 }
 
@@ -37,10 +35,6 @@ function broadcastVersionChange(version) {
       clients.delete(client);
     }
   });
-  
-  if (clients.size > 0) {
-    console.log(`[SSE] 广播版本变更: ${version}，客户端数: ${clients.size}`);
-  }
 }
 
 /**

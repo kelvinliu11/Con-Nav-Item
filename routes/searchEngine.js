@@ -59,7 +59,6 @@ router.post('/parse', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('解析搜索引擎失败:', error);
     res.status(500).json({ 
       error: '解析失败',
       message: error.message 
