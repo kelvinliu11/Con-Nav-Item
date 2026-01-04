@@ -552,6 +552,29 @@ function notifyExtensionMenusUpdated() {
   }
 }
 
+// 恢复备份后检查 AI 配置状态
+async function checkAIConfigAfterRestore() {
+  try {
+    const data = await apiRequest('/api/ai/config/verify');
+    if (data.success) {
+      if (data.status === 'decrypt_failed') {
+        // AI 配置解密失败，提示用户
+        showMessage('⚠️ AI 配置恢复异常：API Key 解密失败，请前往 AI 设置重新配置', 'warning', 8000);
+        // 延迟显示确认框，避免与其他消息冲突
+        setTimeout(() => {
+          if (confirm('AI 配置的 API Key 解密失败，可能是因为备份来自不同的服务器。\n\n是否现在前往 AI 设置页面重新配置？')) {
+            window.location.href = '/admin/ai-settings';
+          }
+        }, 1000);
+      } else if (data.status === 'ok') {
+        console.log('[备份管理] AI 配置验证通过');
+      }
+    }
+  } catch (e) {
+    console.warn('[备份管理] AI 配置验证失败:', e);
+  }
+}
+
 const showCreateBackupDialog = () => {
   createBackupForm.name = '';
   createBackupForm.description = '';
@@ -689,6 +712,12 @@ const executeAction = async () => {
           loadAutoBackupConfig()
         ]);
         notifyExtensionMenusUpdated();
+        
+        // 检查 AI 配置是否正常恢复
+        if (data.checkAIConfig) {
+          await checkAIConfigAfterRestore();
+        }
+        
         showMessage('✓ 恢复完成！数据已更新', 'success', 5000);
       } else if (data.requireConfirm && data.code === 'NO_SIGNATURE') {
         // 未签名的备份，需要二次确认
@@ -708,6 +737,12 @@ const executeAction = async () => {
               loadAutoBackupConfig()
             ]);
             notifyExtensionMenusUpdated();
+            
+            // 检查 AI 配置是否正常恢复
+            if (retryData.checkAIConfig) {
+              await checkAIConfigAfterRestore();
+            }
+            
             showMessage('✓ 恢复完成！数据已更新', 'success', 5000);
           } else {
             showMessage('✗ ' + (retryData.message || '恢复失败'), 'error');
@@ -924,6 +959,12 @@ const restoreFromWebdav = async (filename) => {
         loadAutoBackupConfig()
       ]);
       notifyExtensionMenusUpdated();
+      
+      // 检查 AI 配置是否正常恢复
+      if (data.checkAIConfig) {
+        await checkAIConfigAfterRestore();
+      }
+      
       showMessage('✓ 恢复完成！数据已更新', 'success', 5000);
     } else {
       showMessage('✗ ' + (data.message || '从 WebDAV 恢复失败'), 'error');

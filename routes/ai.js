@@ -558,6 +558,67 @@ router.get('/config', authMiddleware, async (req, res) => {
   }
 });
 
+// 验证 AI 配置是否可用（用于备份恢复后检查）
+router.get('/config/verify', authMiddleware, async (req, res) => {
+  try {
+    const config = await db.getAIConfig();
+    
+    // 检查是否有配置
+    if (!config.provider) {
+      return res.json({
+        success: true,
+        status: 'not_configured',
+        message: '未配置 AI 服务'
+      });
+    }
+    
+    // 检查是否有 API Key
+    if (!config.apiKey) {
+      return res.json({
+        success: true,
+        status: 'no_api_key',
+        message: '未配置 API Key',
+        provider: config.provider
+      });
+    }
+    
+    // 尝试解密 API Key
+    try {
+      const encrypted = JSON.parse(config.apiKey);
+      const decrypted = decrypt(encrypted.encrypted, encrypted.iv, encrypted.authTag);
+      
+      if (!decrypted) {
+        return res.json({
+          success: true,
+          status: 'decrypt_failed',
+          message: 'API Key 解密失败，可能需要重新配置',
+          provider: config.provider
+        });
+      }
+      
+      // 解密成功
+      return res.json({
+        success: true,
+        status: 'ok',
+        message: 'AI 配置正常',
+        provider: config.provider,
+        hasValidKey: true
+      });
+    } catch (e) {
+      // 可能是未加密的旧数据
+      return res.json({
+        success: true,
+        status: 'ok',
+        message: 'AI 配置正常（旧格式）',
+        provider: config.provider,
+        hasValidKey: true
+      });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, message: '验证配置失败: ' + error.message });
+  }
+});
+
 // 保存 AI 配置
 router.post('/config', authMiddleware, async (req, res) => {
   try {

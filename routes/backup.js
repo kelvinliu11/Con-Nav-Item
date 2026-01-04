@@ -843,7 +843,8 @@ router.post('/restore/:filename', authMiddleware, backupLimiter, async (req, res
       restored: restoredFiles,
       skipped: skippedFiles,
       preRestoreBackup: preRestoreFiles.length > 0 ? `backups/pre-restore/*-${timestamp}` : null,
-      needReload: true // 提示前端需要重新加载数据
+      needReload: true, // 提示前端需要重新加载数据
+      checkAIConfig: true // 提示前端检查 AI 配置
     });
 
     // 在响应发送后异步重连数据库
@@ -861,6 +862,23 @@ router.post('/restore/:filename', authMiddleware, backupLimiter, async (req, res
           clearCachedSecret();
           await initCryptoSecret();
           console.log('✓ 加密密钥已重新加载');
+          
+          // 验证 AI 配置是否可用
+          try {
+            const { decrypt } = require('../utils/crypto');
+            const aiConfig = await db.getAIConfig();
+            if (aiConfig.apiKey) {
+              const encrypted = JSON.parse(aiConfig.apiKey);
+              const decrypted = decrypt(encrypted.encrypted, encrypted.iv, encrypted.authTag);
+              if (decrypted) {
+                console.log('✓ AI 配置验证成功');
+              } else {
+                console.warn('⚠️ AI 配置 API Key 解密失败，可能需要重新配置');
+              }
+            }
+          } catch (e) {
+            console.warn('⚠️ AI 配置验证失败:', e.message);
+          }
         } catch (e) {
           console.warn('重新加载加密密钥失败:', e.message);
         }
@@ -1490,7 +1508,8 @@ router.post('/webdav/restore', authMiddleware, async (req, res) => {
       message,
       restored: restoredFiles,
       skipped: skippedFiles,
-      needReload: true
+      needReload: true,
+      checkAIConfig: true // 提示前端检查 AI 配置
     });
 
     // 在响应发送后异步重连数据库
@@ -1500,6 +1519,32 @@ router.post('/webdav/restore', authMiddleware, async (req, res) => {
         if (db.reconnect) {
           await db.reconnect();
           console.log('✓ 数据库已重新连接，恢复的数据已生效');
+        }
+        
+        // 清除加密密钥缓存并重新初始化
+        try {
+          const { clearCachedSecret, initCryptoSecret, decrypt } = require('../utils/crypto');
+          clearCachedSecret();
+          await initCryptoSecret();
+          console.log('✓ 加密密钥已重新加载');
+          
+          // 验证 AI 配置是否可用
+          try {
+            const aiConfig = await db.getAIConfig();
+            if (aiConfig.apiKey) {
+              const encrypted = JSON.parse(aiConfig.apiKey);
+              const decrypted = decrypt(encrypted.encrypted, encrypted.iv, encrypted.authTag);
+              if (decrypted) {
+                console.log('✓ AI 配置验证成功');
+              } else {
+                console.warn('⚠️ AI 配置 API Key 解密失败，可能需要重新配置');
+              }
+            }
+          } catch (e) {
+            console.warn('⚠️ AI 配置验证失败:', e.message);
+          }
+        } catch (e) {
+          console.warn('重新加载加密密钥失败:', e.message);
         }
       } catch (e) {
         console.error('数据库重连失败:', e);
