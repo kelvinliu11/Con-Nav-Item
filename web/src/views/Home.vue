@@ -217,8 +217,45 @@
       @click.stop
     />
     
+    <!-- 背景选择面板 -->
+    <transition name="bg-panel">
+      <div v-if="showBgPanel" class="bg-panel-overlay" @click="showBgPanel = false">
+        <div class="bg-panel" @click.stop>
+          <div class="bg-panel-header">
+            <h4>选择背景</h4>
+            <button class="panel-close-btn" @click="showBgPanel = false">×</button>
+          </div>
+          <div class="bg-panel-content">
+            <div class="bg-grid">
+              <div 
+                v-for="bg in presetBackgrounds" 
+                :key="bg.id" 
+                class="bg-item"
+                :class="{ active: currentBgId === bg.id }"
+                @click="selectBackground(bg)"
+              >
+                <img :src="bg.thumb" :alt="bg.name" loading="lazy" />
+                <span class="bg-item-name">{{ bg.name }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </transition>
+    
     <!-- 浮动操作按钮菜单 -->
     <div class="fab-container" @click.stop>
+      <!-- 背景设置按钮 -->
+      <transition name="fab-item">
+        <button v-show="showFabMenu" @click="showBgPanel = true" class="bg-setting-btn" title="更换背景">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+            <path d="M21 15l-5-5L5 21"></path>
+          </svg>
+        </button>
+      </transition>
+      
       <!-- 批量添加悬浮按钮 -->
       <transition name="fab-item">
         <button v-if="activeMenu" v-show="showFabMenu" @click="openBatchAddModal" class="batch-add-btn" title="批量添加网站">
@@ -921,6 +958,74 @@ function closeFabMenu() {
   }
 }
 
+// ========== 背景设置相关 ==========
+const showBgPanel = ref(false);
+const currentBgId = ref(1);
+
+// 15张预置风景背景图（使用 Unsplash 高质量图片）
+const presetBackgrounds = [
+  { id: 1, name: '山峦云海', thumb: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=300&h=200&fit=crop', url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&h=1080&fit=crop' },
+  { id: 2, name: '星空银河', thumb: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=300&h=200&fit=crop', url: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=1920&h=1080&fit=crop' },
+  { id: 3, name: '海边日落', thumb: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=300&h=200&fit=crop', url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1920&h=1080&fit=crop' },
+  { id: 4, name: '森林小径', thumb: 'https://images.unsplash.com/photo-1448375240586-882707db888b?w=300&h=200&fit=crop', url: 'https://images.unsplash.com/photo-1448375240586-882707db888b?w=1920&h=1080&fit=crop' },
+  { id: 5, name: '极光之夜', thumb: 'https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=300&h=200&fit=crop', url: 'https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=1920&h=1080&fit=crop' },
+  { id: 6, name: '雪山倒影', thumb: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=300&h=200&fit=crop', url: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1920&h=1080&fit=crop' },
+  { id: 7, name: '樱花盛开', thumb: 'https://images.unsplash.com/photo-1522383225653-ed111181a951?w=300&h=200&fit=crop', url: 'https://images.unsplash.com/photo-1522383225653-ed111181a951?w=1920&h=1080&fit=crop' },
+  { id: 8, name: '沙漠星空', thumb: 'https://images.unsplash.com/photo-1509316785289-025f5b846b35?w=300&h=200&fit=crop', url: 'https://images.unsplash.com/photo-1509316785289-025f5b846b35?w=1920&h=1080&fit=crop' },
+  { id: 9, name: '湖光山色', thumb: 'https://images.unsplash.com/photo-1439066615861-d1af74d74000?w=300&h=200&fit=crop', url: 'https://images.unsplash.com/photo-1439066615861-d1af74d74000?w=1920&h=1080&fit=crop' },
+  { id: 10, name: '云端之上', thumb: 'https://images.unsplash.com/photo-1534088568595-a066f410bcda?w=300&h=200&fit=crop', url: 'https://images.unsplash.com/photo-1534088568595-a066f410bcda?w=1920&h=1080&fit=crop' },
+  { id: 11, name: '秋日红叶', thumb: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&h=200&fit=crop', url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=1920&h=1080&fit=crop' },
+  { id: 12, name: '瀑布飞流', thumb: 'https://images.unsplash.com/photo-1432405972618-c60b0225b8f9?w=300&h=200&fit=crop', url: 'https://images.unsplash.com/photo-1432405972618-c60b0225b8f9?w=1920&h=1080&fit=crop' },
+  { id: 13, name: '草原晨曦', thumb: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=300&h=200&fit=crop', url: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=1920&h=1080&fit=crop' },
+  { id: 14, name: '城市夜景', thumb: 'https://images.unsplash.com/photo-1514565131-fce0801e5785?w=300&h=200&fit=crop', url: 'https://images.unsplash.com/photo-1514565131-fce0801e5785?w=1920&h=1080&fit=crop' },
+  { id: 15, name: '热带海岛', thumb: 'https://images.unsplash.com/photo-1559128010-7c1ad6e1b6a5?w=300&h=200&fit=crop', url: 'https://images.unsplash.com/photo-1559128010-7c1ad6e1b6a5?w=1920&h=1080&fit=crop' }
+];
+
+// 选择背景
+function selectBackground(bg) {
+  currentBgId.value = bg.id;
+  applyBackground(bg.url);
+  saveBgSetting(bg.id);
+  showBgPanel.value = false;
+}
+
+// 应用背景到页面
+function applyBackground(url) {
+  let bgStyle = document.getElementById('dynamic-bg-style');
+  if (!bgStyle) {
+    bgStyle = document.createElement('style');
+    bgStyle.id = 'dynamic-bg-style';
+    document.head.appendChild(bgStyle);
+  }
+  bgStyle.textContent = `.home-container { background-image: url(${url}) !important; background-size: cover; background-position: center; background-attachment: fixed; }`;
+}
+
+// 保存背景设置到本地
+function saveBgSetting(bgId) {
+  try {
+    localStorage.setItem('nav_bg_id', bgId.toString());
+  } catch (e) {
+    console.warn('保存背景设置失败:', e);
+  }
+}
+
+// 加载保存的背景设置
+function loadBgSetting() {
+  try {
+    const savedId = localStorage.getItem('nav_bg_id');
+    if (savedId) {
+      const bgId = parseInt(savedId);
+      const bg = presetBackgrounds.find(b => b.id === bgId);
+      if (bg) {
+        currentBgId.value = bgId;
+        applyBackground(bg.url);
+      }
+    }
+  } catch (e) {
+    console.warn('加载背景设置失败:', e);
+  }
+}
+
 const selectedCardsCount = computed(() => {
   return parsedCards.value.filter(card => card.selected).length;
 });
@@ -1246,6 +1351,9 @@ const filteredCards = computed(() => {
 });
 
 onMounted(async () => {
+  // 加载保存的背景设置
+  loadBgSetting();
+  
   // 检查 AI 配置状态
   checkAIConfig();
   
@@ -3738,20 +3846,12 @@ async function saveCardEdit() {
 
 .home-container {
   min-height: 100vh;
-  /* 现代渐变背景 - 深邃星空感 */
-  background: 
-    /* 顶层：微妙的光晕效果 */
-    radial-gradient(ellipse at 20% 20%, rgba(120, 119, 198, 0.15) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 80%, rgba(74, 144, 226, 0.12) 0%, transparent 50%),
-    radial-gradient(ellipse at 40% 80%, rgba(168, 85, 247, 0.08) 0%, transparent 40%),
-    /* 底层：主渐变 */
-    linear-gradient(135deg, 
-      #0f0c29 0%, 
-      #302b63 50%, 
-      #24243e 100%
-    );
+  /* 默认背景图 - 山峦云海 */
+  background-image: url('https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&h=1080&fit=crop');
   background-size: cover;
+  background-position: center;
   background-attachment: fixed;
+  background-repeat: no-repeat;
   display: flex;
   flex-direction: column;
   position: relative;
@@ -3759,7 +3859,7 @@ async function saveCardEdit() {
   overflow-x: hidden;
 }
 
-/* 动态光效层 */
+/* 背景遮罩层 - 提升内容可读性 */
 .home-container::before {
   content: '';
   position: absolute;
@@ -3767,42 +3867,15 @@ async function saveCardEdit() {
   left: 0;
   right: 0;
   bottom: 0;
-  background: 
-    radial-gradient(circle at 50% 0%, rgba(124, 58, 237, 0.12) 0%, transparent 50%),
-    radial-gradient(circle at 0% 50%, rgba(59, 130, 246, 0.08) 0%, transparent 40%),
-    radial-gradient(circle at 100% 50%, rgba(236, 72, 153, 0.06) 0%, transparent 40%);
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.3) 0%,
+    rgba(0, 0, 0, 0.15) 30%,
+    rgba(0, 0, 0, 0.15) 70%,
+    rgba(0, 0, 0, 0.4) 100%
+  );
   z-index: 1;
   pointer-events: none;
-  animation: bgPulse 15s ease-in-out infinite alternate;
-}
-
-/* 网格纹理层 - 增加科技感 */
-.home-container::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-image: 
-    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-  background-size: 50px 50px;
-  z-index: 2;
-  pointer-events: none;
-  opacity: 0.5;
-}
-
-/* 背景动画 */
-@keyframes bgPulse {
-  0% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  100% {
-    opacity: 0.7;
-    transform: scale(1.05);
-  }
 }
 
 .search-section {
@@ -4614,7 +4687,8 @@ async function saveCardEdit() {
     0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-.batch-add-btn {
+.batch-add-btn,
+.bg-setting-btn {
   position: relative;
   width: 40px;
   height: 40px;
@@ -4634,9 +4708,127 @@ async function saveCardEdit() {
   background: linear-gradient(135deg, #52c41a 0%, #73d13d 100%);
 }
 
-.batch-add-btn:hover {
+.bg-setting-btn {
+  background: linear-gradient(135deg, #722ed1 0%, #9254de 100%);
+}
+
+.batch-add-btn:hover,
+.bg-setting-btn:hover {
   transform: scale(1.12) translateY(-2px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+/* 背景选择面板 */
+.bg-panel-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.bg-panel {
+  background: white;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 800px;
+  max-height: 80vh;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.bg-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.bg-panel-header h4 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.bg-panel-content {
+  padding: 20px;
+  max-height: calc(80vh - 60px);
+  overflow-y: auto;
+}
+
+.bg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.bg-item {
+  position: relative;
+  aspect-ratio: 16/10;
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 3px solid transparent;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.bg-item:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.bg-item.active {
+  border-color: #1890ff;
+  box-shadow: 0 0 0 3px rgba(24, 144, 255, 0.2);
+}
+
+.bg-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.bg-item:hover img {
+  transform: scale(1.05);
+}
+
+.bg-item-name {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 8px 12px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+}
+
+/* 背景面板动画 */
+.bg-panel-enter-active,
+.bg-panel-leave-active {
+  transition: all 0.3s ease;
+}
+
+.bg-panel-enter-from,
+.bg-panel-leave-to {
+  opacity: 0;
+}
+
+.bg-panel-enter-from .bg-panel,
+.bg-panel-leave-to .bg-panel {
+  transform: scale(0.9) translateY(20px);
 }
 
 .spin {
