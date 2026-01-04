@@ -17,35 +17,7 @@
     <!-- 资源预加载提示 -->
     <link rel="preconnect" href="https://main.ssss.nyc.mn" crossorigin>
     <link rel="dns-prefetch" href="https://img.icons8.com">
-    <!-- 在页面渲染前应用保存的背景，消除闪烁 -->
-    <script>
-      (function() {
-        try {
-          // 背景版本号 - 与 Home.vue 中保持一致
-          var BG_VERSION = '4.0';
-          var BG_STORAGE_KEY = 'nav_bg_settings';
-          
-          // 清理旧版本的背景数据
-          localStorage.removeItem('nav_background');
-          localStorage.removeItem('nav_background_version');
-          
-          var savedSettings = localStorage.getItem(BG_STORAGE_KEY);
-          if (savedSettings) {
-            var settings = JSON.parse(savedSettings);
-            if (settings.version === BG_VERSION && settings.url) {
-              // 添加内联样式，覆盖 CSS 默认背景
-              var style = document.createElement('style');
-              style.id = 'dynamic-bg-style';
-              style.textContent = '.home-container { background-image: url(' + settings.url + ') !important; }';
-              document.head.appendChild(style);
-            }
-          }
-        } catch (e) {
-          console.error('Failed to load saved background:', e);
-        }
-      })();
-    </script>
-    <script type="module" crossorigin src="/assets/index-B6FrlWWm.js"></script>
+    <script type="module" crossorigin src="/assets/index-CGFOr2cQ.js"></script>
   </head>
   <body style="margin:0;padding:0;background:#222;">
     <div id="app"></div>

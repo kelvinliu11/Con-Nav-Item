@@ -69,10 +69,6 @@ export const batchParseUrls = (urls) => axios.post(`${BASE}/batch/parse`, { urls
 export const batchAddCards = (menuId, subMenuId, cards) => axios.post(`${BASE}/batch/add`, { menu_id: menuId, sub_menu_id: subMenuId, cards }, { headers: authHeaders() });
 export const batchCheckUrls = (urls) => axios.post(`${BASE}/batch/check-urls`, { urls }, { headers: authHeaders() });
 
-// 壁纸API
-export const getRandomWallpaper = (source = 'auto') => axios.get(`${BASE}/wallpaper/random`, { params: { source } });
-export const getBuiltinBackgrounds = () => axios.get(`${BASE}/wallpaper/builtin`);
-
 // 搜索引擎API
 export const getSearchEngines = () => axios.get(`${BASE}/search-engines`);
 export const parseSearchEngine = (url) => axios.post(`${BASE}/search-engines/parse`, { url }, { headers: authHeaders() });

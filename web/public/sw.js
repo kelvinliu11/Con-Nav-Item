@@ -51,26 +51,7 @@ self.addEventListener('fetch', (event) => {
 
   // API 请求：网络优先，不缓存
   if (url.pathname.startsWith('/api/')) {
-    // 壁纸 API 不缓存，确保每次都是新壁纸
-    if (url.pathname.includes('/wallpaper/')) {
-      event.respondWith(
-        fetch(request, { cache: 'no-store' })
-          .then(response => response)
-          .catch(error => {
-            // 网络失败时返回错误，前端会降级处理
-            return new Response(JSON.stringify({ 
-              success: false,
-              error: '获取壁纸失败，请检查网络' 
-            }), {
-              headers: { 'Content-Type': 'application/json' },
-              status: 503
-            });
-          })
-      );
-      return;
-    }
-    
-    // 其他 API 请求：网络优先
+    // API 请求：网络优先
     event.respondWith(
       fetch(request)
         .then(response => {
