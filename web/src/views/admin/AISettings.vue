@@ -214,18 +214,26 @@
       <!-- 任务进行中 -->
       <div class="task-progress" v-if="batchRunning">
         <div class="progress-header">
-          <span class="progress-title">{{ batchLabel }}</span>
+          <span class="progress-title">
+            <span class="progress-icon">⚡</span>
+            {{ batchLabel }}
+          </span>
           <span class="progress-count">{{ batchProgress.current }} / {{ batchProgress.total }}</span>
         </div>
         <div class="progress-bar-wrapper">
           <div class="progress-bar">
-            <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
+            <div class="progress-fill" :style="{ width: progressPercent + '%' }">
+              <div class="progress-shine"></div>
+            </div>
           </div>
           <span class="progress-percent">{{ progressPercent }}%</span>
         </div>
         <div class="progress-detail" v-if="batchProgress.currentCard">
-          <span class="current-item">{{ batchProgress.currentCard }}</span>
-          <span class="eta" v-if="estimatedTime">预计剩余 {{ estimatedTime }}</span>
+          <span class="current-item">
+            <span class="current-label">当前：</span>
+            {{ batchProgress.currentCard }}
+          </span>
+          <span class="eta" v-if="estimatedTime">⏱️ {{ estimatedTime }}</span>
         </div>
         <!-- 并发状态指示器 -->
         <div class="concurrency-status">
@@ -244,6 +252,12 @@
 
       <!-- 操作按钮 -->
       <div class="batch-actions" v-else>
+        <!-- 启动中的加载提示 -->
+        <div class="starting-hint" v-if="starting">
+          <div class="starting-spinner"></div>
+          <span>正在启动任务...</span>
+        </div>
+        
         <!-- 一键补全 -->
         <div class="action-group primary-action" v-if="totalMissing > 0">
           <button 
@@ -775,12 +789,24 @@ export default {
           return;
         }
         
+        // 立即显示进度条UI
         this.batchType = type;
         this.batchMode = mode;
-        this.batchProgress = { current: 0, total: res.data.total, currentCard: '正在处理...' };
+        this.batchProgress = { 
+          current: 0, 
+          total: res.data.total, 
+          currentCard: '正在初始化...',
+          concurrency: res.data.initialConcurrency || 3,
+          isRateLimited: false
+        };
         this.batchRunning = true;
         this.batchStartTime = Date.now();
-        this.showMessage(`任务已启动，共 ${res.data.total} 个卡片`, 'info');
+        
+        // 显示启动消息
+        const typeLabels = { name: '名称', description: '描述', tags: '标签' };
+        this.showMessage(`开始生成${typeLabels[type]}，共 ${res.data.total} 个卡片`, 'success');
+        
+        // 立即开始轮询
         this.startPolling();
         
       } catch (e) {
@@ -790,6 +816,7 @@ export default {
       }
     },
     startPolling() {
+      // 立即执行第一次轮询
       const poll = async () => {
         if (!this.batchRunning) {
           this.stopPolling();
@@ -800,28 +827,36 @@ export default {
           const res = await api.get('/api/ai/batch-task/status');
           
           if (!res.data.success) {
+            // API 调用失败，继续轮询
             this.pollTimer = setTimeout(poll, 1500);
             return;
           }
           
+          // 更新进度信息
           if (res.data.total > 0) {
             this.batchProgress.current = res.data.current || 0;
             this.batchProgress.total = res.data.total;
-            this.batchProgress.currentCard = res.data.currentCard || '';
+            this.batchProgress.currentCard = res.data.currentCard || '处理中...';
             this.batchProgress.concurrency = res.data.concurrency || 1;
             this.batchProgress.isRateLimited = res.data.isRateLimited || false;
           }
           
+          // 检查任务是否还在运行
           if (res.data.running) {
+            // 任务继续运行，安排下次轮询
             this.pollTimer = setTimeout(poll, 800);
           } else {
+            // 任务已完成
             this.onTaskComplete(res.data);
           }
         } catch (e) {
+          // 网络错误，继续轮询
+          console.error('轮询错误:', e);
           this.pollTimer = setTimeout(poll, 2000);
         }
       };
       
+      // 立即执行第一次轮询，不延迟
       poll();
     },
     onTaskComplete(data) {
@@ -1376,73 +1411,148 @@ export default {
 
 /* 任务进度 */
 .task-progress {
-  padding: 20px;
-  background: var(--bg-secondary, #f9fafb);
-  border-radius: 12px;
+  padding: 24px;
+  background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+  border: 2px solid var(--primary-color, #3b82f6);
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+  animation: pulse-border 2s ease-in-out infinite;
+}
+
+@keyframes pulse-border {
+  0%, 100% {
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+  }
+  50% {
+    box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
+  }
 }
 
 .progress-header {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 12px;
+  align-items: center;
+  margin-bottom: 16px;
 }
 
 .progress-title {
-  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 15px;
   color: var(--text-primary, #1f2937);
 }
 
+.progress-icon {
+  font-size: 18px;
+  animation: rotate 2s linear infinite;
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .progress-count {
-  font-size: 14px;
-  color: var(--text-secondary, #6b7280);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--primary-color, #3b82f6);
+  padding: 4px 12px;
+  background: var(--card-bg, #fff);
+  border-radius: 12px;
 }
 
 .progress-bar-wrapper {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 
 .progress-bar {
   flex: 1;
-  height: 8px;
+  height: 12px;
   background: var(--border-color, #e5e7eb);
-  border-radius: 4px;
+  border-radius: 6px;
   overflow: hidden;
+  position: relative;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #3b82f6, #8b5cf6);
-  border-radius: 4px;
-  transition: width 0.3s;
+  background: linear-gradient(90deg, #3b82f6, #8b5cf6, #3b82f6);
+  background-size: 200% 100%;
+  border-radius: 6px;
+  transition: width 0.5s ease-out;
+  position: relative;
+  animation: gradient-shift 2s linear infinite;
+}
+
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+.progress-shine {
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+  animation: shine 1.5s infinite;
+}
+
+@keyframes shine {
+  0% { left: -100%; }
+  100% { left: 200%; }
 }
 
 .progress-percent {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 700;
   color: var(--primary-color, #3b82f6);
-  min-width: 40px;
+  min-width: 50px;
+  text-align: right;
 }
 
 .progress-detail {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--card-bg, #fff);
+  border-radius: 10px;
   font-size: 13px;
-  color: var(--text-secondary, #6b7280);
 }
 
 .current-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 60%;
+  color: var(--text-secondary, #6b7280);
+}
+
+.current-label {
+  font-weight: 600;
+  color: var(--text-primary, #1f2937);
+  flex-shrink: 0;
 }
 
 .eta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   color: var(--primary-color, #3b82f6);
+  font-weight: 500;
+  flex-shrink: 0;
 }
 
 /* 并发状态 */
@@ -1451,48 +1561,71 @@ export default {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
-  padding: 8px 12px;
+  padding: 10px 14px;
   background: var(--card-bg, #fff);
-  border-radius: 8px;
+  border-radius: 10px;
   font-size: 13px;
+  border: 1px solid var(--border-color, #e5e7eb);
 }
 
 .concurrency-label {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   color: var(--text-secondary, #6b7280);
+  font-weight: 500;
 }
 
 .concurrency-icon {
-  font-size: 16px;
+  font-size: 18px;
+  animation: bounce 1s ease-in-out infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
 }
 
 .concurrency-badge {
-  padding: 4px 10px;
-  border-radius: 12px;
+  padding: 5px 12px;
+  border-radius: 14px;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
+  transition: all 0.3s;
 }
 
 .concurrency-badge.high {
   background: #dcfce7;
   color: #16a34a;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.1);
 }
 
 .concurrency-badge.medium {
   background: #dbeafe;
   color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
 .concurrency-badge.low {
   background: #fef3c7;
   color: #d97706;
+  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.1);
 }
 
 .concurrency-badge.rate-limited {
   background: #fee2e2;
   color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+  animation: pulse-red 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-red {
+  0%, 100% {
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(220, 38, 38, 0.2);
+  }
 }
 
 /* 批量操作 */
@@ -1500,6 +1633,33 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+.starting-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px;
+  background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+  border: 2px dashed var(--primary-color, #3b82f6);
+  border-radius: 12px;
+  color: var(--primary-color, #3b82f6);
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.starting-spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid var(--primary-color, #3b82f6);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .primary-action {
