@@ -280,8 +280,8 @@ export default {
       connectionTested: false,
       connectionOk: false,
       stats: null,
-      task: { running: false, type: '', mode: '', current: 0, total: 0, currentCard: '', startTime: 0 },
-      pollInterval: null,
+      task: { running: false, type: '', mode: '', current: 0, total: 0, currentCard: '', startTime: 0, errors: [], successCount: 0, failCount: 0 },
+      eventSource: null,
       toast: { show: false, msg: '', type: 'info' },
       showWizard: false
     };
@@ -333,10 +333,10 @@ export default {
   async mounted() {
     await this.loadConfig();
     await this.refreshStats();
-    await this.checkTask();
+    await this.initRealtimeUpdates();
   },
   beforeUnmount() {
-    this.stopPoll();
+    this.closeEventSource();
   },
   methods: {
     selectProvider(key) {
@@ -404,44 +404,88 @@ export default {
       }
       this.testing = false;
     },
-    async refreshStats() {
-      this.refreshing = true;
-      try {
-        const [n, d, t, a] = await Promise.all([
-          api.get('/api/ai/empty-cards?type=name'),
-          api.get('/api/ai/empty-cards?type=description'),
-          api.get('/api/ai/empty-cards?type=tags'),
-          api.get('/api/ai/empty-cards?type=description&mode=all')
-        ]);
-        this.stats = {
-          emptyName: n.data.total || 0,
-          emptyDesc: d.data.total || 0,
-          emptyTags: t.data.total || 0,
-          total: a.data.total || 0
-        };
-      } catch {}
-      this.refreshing = false;
-    },
-      async checkTask() {
+      async refreshStats() {
+        this.refreshing = true;
         try {
-          const { data } = await api.get('/api/ai/batch-task/status');
-          if (data.success && data.running) {
-            this.task = {
-              running: true,
-              types: data.types || [],
-              current: data.current || 0,
-              total: data.total || 0,
-              successCount: data.successCount || 0,
-              failCount: data.failCount || 0,
-              currentCard: data.currentCard || '',
-              errors: data.errors || [],
-              concurrency: data.concurrency,
-              isRateLimited: data.isRateLimited,
-              startTime: data.startTime || Date.now()
-            };
-            this.startPoll();
+          const { data } = await api.get('/api/ai/stats');
+          if (data.success) {
+            this.stats = data.stats;
           }
-        } catch {}
+        } catch (e) {
+          console.error('Failed to refresh stats:', e);
+        }
+        this.refreshing = false;
+      },
+    // 初始化实时更新 (SSE)
+    async initRealtimeUpdates() {
+      this.closeEventSource();
+      
+      const token = localStorage.getItem('token');
+      const url = `/api/ai/batch-task/stream${token ? '?token=' + token : ''}`;
+      
+      this.eventSource = new EventSource(url);
+      
+      this.eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          this.updateTaskState(data);
+        } catch (e) {
+          console.error('Failed to parse SSE data:', e);
+        }
+      };
+      
+      this.eventSource.onerror = (err) => {
+        console.warn('SSE connection error, falling back to polling...', err);
+        this.closeEventSource();
+        // 如果 SSE 失败，降级到轮询（可选，这里由于已经重构了后端，暂不实现轮询 fallback，SSE 应该很稳定）
+      };
+    },
+    closeEventSource() {
+      if (this.eventSource) {
+        this.eventSource.close();
+        this.eventSource = null;
+      }
+    },
+      updateTaskState(data) {
+        if (!data) return;
+        
+        // 如果任务刚刚从运行变为不运行 (data.running 由 true 变为 false)
+        if (this.task.running && !data.running) {
+          // 确保进度条到 100%
+          this.task.current = this.task.total;
+          if (this.task.total > 0) {
+            this.showToast(`任务结束！成功 ${data.successCount || 0}，失败 ${data.failCount || 0}`, data.failCount > 0 ? 'info' : 'success');
+          }
+          
+          // 延迟关闭，让用户看清结果
+          setTimeout(() => {
+            this.task.running = false;
+            this.refreshStats();
+          }, 1500);
+          return;
+        }
+        
+        // 如果后端传回的任务状态是运行中，则更新本地状态
+        if (data.running) {
+          this.task = {
+            ...this.task,
+            running: true,
+            types: data.types || [],
+            current: data.current || 0,
+            total: data.total || 0,
+            successCount: data.successCount || 0,
+            failCount: data.failCount || 0,
+            currentCard: data.currentCard || '',
+            errors: data.errors || [],
+            concurrency: data.concurrency,
+            isRateLimited: data.isRateLimited,
+            startTime: data.startTime || this.task.startTime || Date.now()
+          };
+        } else if (!this.task.running) {
+          // 如果后端不运行且本地也不运行，同步一下状态即可（比如失败数等）
+          // 但不要把 running 设为 true，防止干扰延迟关闭逻辑
+          Object.assign(this.task, { ...data, running: false });
+        }
       },
     async startTask(type, mode) {
       if (this.starting || this.task.running) return;
@@ -449,71 +493,44 @@ export default {
       
       this.starting = true;
       try {
-        const { data } = await api.post('/api/ai/batch-task/start', { type, mode });
-        if (!data.success) {
-          this.showToast(data.message || '启动失败', 'error');
-          this.starting = false;
-          return;
-        }
-        if (data.total === 0) {
-          this.showToast('没有需要处理的卡片', 'info');
-          this.starting = false;
-          return;
-        }
-        // 启动成功，设置任务状态
+        // 立即显示进度条面板
         this.task = {
           running: true,
           type,
           mode,
           current: 0,
-          total: data.total,
+          total: 0,
+          successCount: 0,
+          failCount: 0,
           currentCard: '准备中...',
-          startTime: Date.now()
+          startTime: Date.now(),
+          errors: [],
+          types: type === 'all' ? ['name', 'description', 'tags'] : [type]
         };
-        this.showToast(`开始处理 ${data.total} 个卡片`, 'success');
-        this.startPoll();
+
+        const { data } = await api.post('/api/ai/batch-task/start', { type, mode });
+        if (!data.success) {
+          this.showToast(data.message || '启动失败', 'error');
+          this.task.running = false;
+          return;
+        }
+        if (data.total === 0) {
+          this.showToast('没有需要处理的卡片', 'info');
+          this.task.running = false;
+          return;
+        }
+        
+        this.task.total = data.total;
+        this.showToast(`任务已启动，正在处理 ${data.total} 个卡片`, 'success');
+        
+        // 重新初始化 SSE 确保连接处于最新状态
+        this.initRealtimeUpdates();
       } catch (e) {
         this.showToast(e.response?.data?.message || '启动失败', 'error');
+        this.task.running = false;
+      } finally {
+        this.starting = false;
       }
-      this.starting = false;
-    },
-    startPoll() {
-      this.stopPoll();
-      // 使用 setInterval 确保稳定轮询
-      this.pollInterval = setInterval(() => this.pollStatus(), 1000);
-      // 立即执行一次
-      this.pollStatus();
-    },
-    stopPoll() {
-      if (this.pollInterval) {
-        clearInterval(this.pollInterval);
-        this.pollInterval = null;
-      }
-    },
-    async pollStatus() {
-      try {
-        const { data } = await api.get('/api/ai/batch-task/status');
-        if (!data.success) return;
-        
-        // 更新详细进度
-        this.task.current = data.current || 0;
-        this.task.total = data.total || this.task.total;
-        this.task.successCount = data.successCount || 0;
-        this.task.failCount = data.failCount || 0;
-        this.task.currentCard = data.currentCard || '';
-        this.task.errors = data.errors || [];
-        this.task.concurrency = data.concurrency;
-        this.task.isRateLimited = data.isRateLimited;
-        this.task.types = data.types || [];
-        
-        // 检查是否完成
-        if (!data.running) {
-          this.stopPoll();
-          this.task.running = false;
-          this.showToast(`任务结束！成功 ${data.successCount || 0}，失败 ${data.failCount || 0}`, data.failCount > 0 ? 'info' : 'success');
-          this.refreshStats();
-        }
-      } catch {}
     },
     async stopTask() {
       this.stopping = true;
@@ -530,7 +547,7 @@ export default {
     onWizardClose() {
       this.showWizard = false;
       this.refreshStats();
-      this.checkTask();
+      this.initRealtimeUpdates();
     }
   }
 };

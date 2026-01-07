@@ -177,7 +177,7 @@
 </template>
 
 <script>
-import { getMenus, getTags, aiFilterCards, aiPreview, aiStartBatchTask, aiGetTaskStatus, aiStopTask } from '../api';
+import { getMenus, getTags, aiFilterCards, aiPreview, aiStartBatchTask, aiStopTask } from '../api';
 
 export default {
   name: 'AIBatchWizard',
@@ -199,10 +199,10 @@ export default {
       previewing: false,
       taskRunning: false,
       taskDone: false,
-      taskStatus: {},
+      taskStatus: { current: 0, total: 0, successCount: 0, failCount: 0, currentCard: '', errors: [] },
       starting: false,
       stopping: false,
-      pollTimer: null
+      eventSource: null
     };
   },
   computed: {
@@ -221,13 +221,16 @@ export default {
       else this.cleanup();
     }
   },
+  beforeUnmount() {
+    this.cleanup();
+  },
   methods: {
     async init() {
       this.step = 0;
       this.previews = [];
       this.taskRunning = false;
       this.taskDone = false;
-      this.taskStatus = {};
+      this.taskStatus = { current: 0, total: 0, successCount: 0, failCount: 0, currentCard: '', errors: [] };
       try {
         const [menuRes, tagRes] = await Promise.all([getMenus(), getTags()]);
         this.menus = menuRes.data || [];
@@ -236,7 +239,7 @@ export default {
       this.applyFilter();
     },
     cleanup() {
-      if (this.pollTimer) clearInterval(this.pollTimer);
+      this.closeEventSource();
     },
     async onMenuChange() {
       this.filters.subMenuId = '';
@@ -274,38 +277,92 @@ export default {
       }
       this.previewing = false;
     },
+    // 初始化实时更新 (SSE)
+    initRealtimeUpdates() {
+      this.closeEventSource();
+      
+      const token = localStorage.getItem('token');
+      const url = `/api/ai/batch-task/stream${token ? '?token=' + token : ''}`;
+      
+      this.eventSource = new EventSource(url);
+      
+      this.eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          this.updateTaskState(data);
+        } catch (e) {
+          console.error('Failed to parse SSE data:', e);
+        }
+      };
+      
+      this.eventSource.onerror = () => {
+        this.closeEventSource();
+      };
+    },
+    closeEventSource() {
+      if (this.eventSource) {
+        this.eventSource.close();
+        this.eventSource = null;
+      }
+    },
+      updateTaskState(data) {
+        if (!data) return;
+        
+        const status = { ...data };
+        
+        // 计算 ETA
+        if (status.startTime && status.current > 1) {
+          const elapsed = Date.now() - status.startTime;
+          const avg = elapsed / status.current;
+          const remain = (status.total - status.current) * avg;
+          status.eta = remain < 60000 ? `${Math.round(remain / 1000)}秒` : `${Math.round(remain / 60000)}分钟`;
+        }
+  
+        // 如果任务刚刚结束
+        if (this.taskRunning && !status.running) {
+          this.taskStatus = { ...status, current: status.total };
+          
+          // 延迟关闭，让用户看清结果
+          setTimeout(() => {
+            this.taskRunning = false;
+            this.taskDone = true;
+            this.closeEventSource();
+          }, 1500);
+          return;
+        }
+
+        if (status.running) {
+          this.taskStatus = status;
+          this.taskRunning = true;
+        } else if (!this.taskRunning) {
+          this.taskStatus = status;
+        }
+      },
     async startTask() {
       this.starting = true;
       try {
+        // 立即展示运行状态
+        this.taskRunning = true;
+        this.taskDone = false;
+        this.taskStatus = { current: 0, total: this.filteredCards.length, successCount: 0, failCount: 0, currentCard: '准备启动...', errors: [] };
+
         const { data } = await aiStartBatchTask({
           cardIds: this.filteredCards.map(c => c.id),
           types: this.strategy.types,
           strategy: { mode: this.strategy.mode, style: this.strategy.style, customPrompt: this.strategy.customPrompt }
         });
+        
         if (data.success && data.total > 0) {
-          this.taskRunning = true;
-          this.taskStatus = { current: 0, total: data.total, successCount: 0, failCount: 0 };
-          this.startPoll();
+          this.initRealtimeUpdates();
         } else {
+          this.taskRunning = false;
           alert(data.message || '没有需要处理的卡片');
         }
       } catch (e) {
+        this.taskRunning = false;
         alert('启动失败: ' + (e.response?.data?.message || e.message));
       }
       this.starting = false;
-    },
-    startPoll() {
-      this.pollTimer = setInterval(async () => {
-        try {
-          const { data } = await aiGetTaskStatus();
-          this.taskStatus = data;
-          if (!data.running) {
-            clearInterval(this.pollTimer);
-            this.taskRunning = false;
-            this.taskDone = true;
-          }
-        } catch {}
-      }, 1000);
     },
     async stopTask() {
       this.stopping = true;
