@@ -132,29 +132,50 @@ async function callOpenAICompatible(config, messages) {
   
   const url = `${actualBaseUrl.replace(/\/+$/, '')}/v1/chat/completions`;
   
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: actualModel,
-      messages: messages,
-      temperature: 0.7,
-      max_tokens: 500
-    })
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
 
-  if (!response.ok) {
-    const errText = await response.text();
-    const error = new Error(`API 请求失败 (${response.status}): ${errText}`);
-    error.status = response.status;
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: actualModel,
+        messages: messages,
+        temperature: 0.7,
+        max_tokens: 500
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errText = await response.text();
+      let errorMessage = `API 请求失败 (${response.status})`;
+      try {
+        const errJson = JSON.parse(errText);
+        errorMessage += `: ${errJson.error?.message || errJson.message || errText}`;
+      } catch {
+        errorMessage += `: ${errText}`;
+      }
+      const error = new Error(errorMessage);
+      error.status = response.status;
+      throw error;
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || '';
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('请求超时 (30s)，请检查网络或提供商状态');
+    }
     throw error;
   }
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || '';
 }
 
 /**
@@ -184,21 +205,42 @@ async function callGemini(config, messages) {
     payload.systemInstruction = { parts: [{ text: systemMsg.content }] };
   }
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-  if (!response.ok) {
-    const errText = await response.text();
-    const error = new Error(`Gemini API 错误 (${response.status}): ${errText}`);
-    error.status = response.status;
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errText = await response.text();
+      let errorMessage = `Gemini API 错误 (${response.status})`;
+      try {
+        const errJson = JSON.parse(errText);
+        errorMessage += `: ${errJson.error?.message || errText}`;
+      } catch {
+        errorMessage += `: ${errText}`;
+      }
+      const error = new Error(errorMessage);
+      error.status = response.status;
+      throw error;
+    }
+
+    const data = await response.json();
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Gemini 请求超时 (30s)');
+    }
     throw error;
   }
-
-  const data = await response.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 }
 
 /**
@@ -224,25 +266,46 @@ async function callAnthropic(config, messages) {
     payload.system = systemMsg.content;
   }
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify(payload)
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-  if (!response.ok) {
-    const errText = await response.text();
-    const error = new Error(`Claude API 错误 (${response.status}): ${errText}`);
-    error.status = response.status;
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errText = await response.text();
+      let errorMessage = `Claude API 错误 (${response.status})`;
+      try {
+        const errJson = JSON.parse(errText);
+        errorMessage += `: ${errJson.error?.message || errText}`;
+      } catch {
+        errorMessage += `: ${errText}`;
+      }
+      const error = new Error(errorMessage);
+      error.status = response.status;
+      throw error;
+    }
+
+    const data = await response.json();
+    return data.content?.[0]?.text || '';
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Claude 请求超时 (30s)');
+    }
     throw error;
   }
-
-  const data = await response.json();
-  return data.content?.[0]?.text || '';
 }
 
 /**
@@ -255,26 +318,40 @@ async function callOllama(config, messages) {
   
   const url = `${actualBaseUrl.replace(/\/+$/, '')}/api/chat`;
   
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: actualModel,
-      messages: messages,
-      stream: false,
-      options: { temperature: 0.7 }
-    })
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-  if (!response.ok) {
-    const errText = await response.text();
-    const error = new Error(`Ollama API 错误 (${response.status}): ${errText}`);
-    error.status = response.status;
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: actualModel,
+        messages: messages,
+        stream: false,
+        options: { temperature: 0.7 }
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errText = await response.text();
+      const error = new Error(`Ollama API 错误 (${response.status}): ${errText}`);
+      error.status = response.status;
+      throw error;
+    }
+
+    const data = await response.json();
+    return data.message?.content || '';
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Ollama 请求超时 (30s)');
+    }
     throw error;
   }
-
-  const data = await response.json();
-  return data.message?.content || '';
 }
 
 module.exports = {

@@ -200,9 +200,8 @@ export default {
       strategy: { types: ['name', 'description'], mode: 'fill', style: 'default', customPrompt: '' },
       previews: [],
       previewing: false,
-      taskRunning: false,
       taskDone: false,
-      taskStatus: { current: 0, total: 0, successCount: 0, failCount: 0, currentCard: '', errors: [] },
+      localTaskStatus: { current: 0, total: 0, successCount: 0, failCount: 0, currentCard: '', errors: [] },
       starting: false,
       stopping: false,
       eventSource: null
@@ -230,6 +229,21 @@ export default {
     visible(v) {
       if (v) this.init();
       // 不再在 visible 改变时清理 SSE，由父组件管理
+    },
+    'activeTask.running'(newVal, oldVal) {
+      // 当任务从运行中变为停止，且当前在执行步骤时，标记为完成
+      if (oldVal === true && newVal === false && this.step === 3) {
+        this.taskDone = true;
+      }
+    },
+    // 实时同步任务状态到本地，用于任务结束后的显示
+    activeTask: {
+      handler(val) {
+        if (val && val.running) {
+          this.localTaskStatus = { ...val };
+        }
+      },
+      deep: true
     }
   },
   methods: {

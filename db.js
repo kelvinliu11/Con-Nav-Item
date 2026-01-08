@@ -542,28 +542,43 @@ async function getAIConfig() {
       keys
     );
     
-    const config = {};
+    // 默认配置
+    const config = {
+      provider: 'deepseek',
+      apiKey: '',
+      baseUrl: '',
+      model: '',
+      requestDelay: '1500',
+      autoGenerate: 'false'
+    };
+
+    const keyMap = {
+      'ai_provider': 'provider',
+      'ai_api_key': 'apiKey',
+      'ai_base_url': 'baseUrl',
+      'ai_model': 'model',
+      'ai_request_delay': 'requestDelay',
+      'ai_auto_generate': 'autoGenerate'
+    };
+
     for (const row of rows) {
-      // 映射数据库 key 到配置 key
-      const keyMap = {
-        'ai_provider': 'provider',
-        'ai_api_key': 'apiKey',
-        'ai_base_url': 'baseUrl',
-        'ai_model': 'model',
-        'ai_request_delay': 'requestDelay',
-        'ai_auto_generate': 'autoGenerate'
-      };
       const configKey = keyMap[row.key];
       if (configKey) {
-        config[configKey] = row.value;
+        config[configKey] = row.value || '';
       }
     }
     
     return config;
   } catch (e) {
     console.error('获取 AI 配置失败:', e);
-    // settings 表可能不存在
-    return {};
+    return {
+      provider: 'deepseek',
+      apiKey: '',
+      baseUrl: '',
+      model: '',
+      requestDelay: '1500',
+      autoGenerate: 'false'
+    };
   }
 }
 
@@ -579,10 +594,11 @@ async function saveAIConfig(config) {
   };
   
   for (const [key, dbKey] of Object.entries(mappings)) {
-    if (config[key] !== undefined) {
+    // 仅当值为 undefined 或 null 时跳过更新 (防止抹掉 API Key)
+    if (config[key] !== undefined && config[key] !== null) {
       await dbRun(
         'REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
-        [dbKey, config[key]?.toString() || '']
+        [dbKey, config[key]?.toString()]
       );
     }
   }

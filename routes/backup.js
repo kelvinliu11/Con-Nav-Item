@@ -495,17 +495,34 @@ router.post('/upload', authMiddleware, backupLimiter, upload.single('backup'), a
           }
           const contentDigest = contentHash.digest();
           
-          signatureValid = verifyBackupSignature(contentDigest, signature);
-          if (signatureValid) {
-            warning = null; // 签名有效，无警告
-          } else {
-            // 签名验证失败，直接拒绝上传
-            fs.unlinkSync(req.file.path);
-            return res.status(403).json({
-              success: false,
-              message: '🚫 备份文件签名验证失败！\n\n此备份文件包含签名，但签名验证未通过。可能原因：\n1. 文件在下载后被修改或损坏\n2. 文件来自其他服务器（使用不同的密钥）\n3. 文件被恶意篡改\n\n为了数据安全，系统拒绝上传此文件。'
-            });
-          }
+            signatureValid = verifyBackupSignature(contentDigest, signature);
+            
+            // 如果使用当前密钥验证失败，尝试使用备份文件内部的密钥进行自验证（用于迁移场景）
+            if (!signatureValid) {
+              const internalSecretFile = directory.files.find(f => f.path === 'config/.crypto-secret');
+              if (internalSecretFile) {
+                const internalSecret = (await internalSecretFile.buffer()).toString('utf-8').trim();
+                if (internalSecret && internalSecret.length >= 32) {
+                  signatureValid = verifyBackupSignature(contentDigest, signature, internalSecret);
+                  if (signatureValid) {
+                    warning = '此备份来自其他服务器，已通过内部密钥验证通过。恢复后将自动切换为备份中的密钥。';
+                    console.log(`✓ 备份通过内部密钥验证成功 (迁移模式): ${req.file.originalname}`);
+                  }
+                }
+              }
+            }
+
+            if (signatureValid) {
+              // 验证成功，清除警告（除非是迁移警告）
+              if (!warning) warning = null;
+            } else {
+              // 签名验证失败，直接拒绝上传
+              fs.unlinkSync(req.file.path);
+              return res.status(403).json({
+                success: false,
+                message: '🚫 备份文件签名验证失败！\n\n此备份文件包含签名，但签名验证未通过。可能原因：\n1. 文件在下载后被修改或损坏\n2. 文件来自其他服务器且内部密钥信息缺失\n3. 文件被恶意篡改\n\n为了数据安全，系统拒绝上传此文件。'
+              });
+            }
         } catch (e) {
           // 签名验证异常，直接拒绝上传
           fs.unlinkSync(req.file.path);
@@ -624,18 +641,34 @@ router.post('/restore/:filename', authMiddleware, backupLimiter, async (req, res
       }
       console.warn(`⚠️ 用户强制恢复未签名的备份: ${filename}`);
     } else {
-      // 有签名，必须验证通过
-      try {
-        if (!verifyBackupSignature(contentDigest, signature)) {
-          return res.status(403).json({
-            success: false,
-            message: '🚫 备份文件签名验证失败！文件已被篡改，拒绝恢复。',
-            code: 'SIGNATURE_INVALID',
-            requireConfirm: false
-          });
-        }
-        console.log(`✓ 备份签名验证通过: ${filename}`);
-      } catch (sigError) {
+        // 有签名，必须验证通过
+        try {
+          let signatureValid = verifyBackupSignature(contentDigest, signature);
+          
+          // 如果使用当前密钥验证失败，尝试使用备份文件内部的密钥进行自验证（用于迁移场景）
+          if (!signatureValid) {
+            const internalSecretFile = directory.files.find(f => f.path === 'config/.crypto-secret');
+            if (internalSecretFile) {
+              const internalSecret = (await internalSecretFile.buffer()).toString('utf-8').trim();
+              if (internalSecret && internalSecret.length >= 32) {
+                signatureValid = verifyBackupSignature(contentDigest, signature, internalSecret);
+                if (signatureValid) {
+                  console.log(`✓ 备份通过内部密钥验证成功 (迁移模式): ${filename}`);
+                }
+              }
+            }
+          }
+
+          if (!signatureValid) {
+            return res.status(403).json({
+              success: false,
+              message: '🚫 备份文件签名验证失败！文件已被篡改或来自未知来源，拒绝恢复。',
+              code: 'SIGNATURE_INVALID',
+              requireConfirm: false
+            });
+          }
+          console.log(`✓ 备份签名验证通过: ${filename}`);
+        } catch (sigError) {
         return res.status(403).json({
           success: false,
           message: '🚫 备份文件签名验证失败: ' + sigError.message,

@@ -726,6 +726,30 @@ router.get('/config', authMiddleware, async (req, res) => {
   }
 });
 
+// 验证 AI 配置（用于备份恢复后检查加密密钥是否一致）
+router.get('/config/verify', authMiddleware, async (req, res) => {
+  try {
+    const config = await db.getAIConfig();
+    if (!config.apiKey) {
+      return res.json({ success: true, status: 'not_configured' });
+    }
+    
+    try {
+      const encrypted = JSON.parse(config.apiKey);
+      const decrypted = decrypt(encrypted.encrypted, encrypted.iv, encrypted.authTag);
+      if (decrypted) {
+        return res.json({ success: true, status: 'ok' });
+      }
+    } catch (e) {
+      return res.json({ success: true, status: 'decrypt_failed', message: 'API Key 解密失败' });
+    }
+    
+    res.json({ success: true, status: 'decrypt_failed' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: '验证配置失败' });
+  }
+});
+
 // 保存 AI 配置
 router.post('/config', authMiddleware, async (req, res) => {
   try {
@@ -748,8 +772,8 @@ router.post('/config', authMiddleware, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Base URL 不能为空' });
     }
     
-    let encryptedApiKey = null;
-    if (apiKey) {
+    let encryptedApiKey = undefined; // 使用 undefined 触发 db.saveAIConfig 的跳过逻辑
+    if (apiKey && apiKey !== '••••••') {
       const encrypted = encrypt(apiKey);
       encryptedApiKey = JSON.stringify(encrypted);
     }
@@ -772,16 +796,70 @@ router.post('/config', authMiddleware, async (req, res) => {
 // 测试 AI 连接
 router.post('/test', authMiddleware, async (req, res) => {
   try {
-    const config = await getDecryptedAIConfig();
-    const validation = validateAIConfig(config);
-    if (!validation.valid) return res.status(400).json({ success: false, message: validation.message });
+    const { provider, apiKey, baseUrl, model } = req.body;
     
-    const messages = [{ role: 'system', content: '助手。' }, { role: 'user', content: 'OK' }];
+    // 1. 获取基础配置
+    let config;
+    if (provider) {
+      // 如果提供了 provider，说明用户可能在尝试新配置
+      const savedConfig = await db.getAIConfig();
+      
+      // 处理 API Key
+      let actualApiKey = apiKey;
+      if (!apiKey || apiKey === '••••••') {
+        // 如果未提供新 Key 或提供的是掩码，且 provider 没变，则使用数据库中的 Key
+        if (provider === savedConfig.provider && savedConfig.apiKey) {
+          try {
+            const encrypted = JSON.parse(savedConfig.apiKey);
+            actualApiKey = decrypt(encrypted.encrypted, encrypted.iv, encrypted.authTag);
+          } catch (e) {
+            actualApiKey = savedConfig.apiKey; // 兼容旧数据
+          }
+        }
+      }
+
+      config = {
+        provider,
+        apiKey: actualApiKey,
+        baseUrl: baseUrl || '',
+        model: model || ''
+      };
+    } else {
+      // 否则使用已保存的完整配置
+      config = await getDecryptedAIConfig();
+    }
+
+    // 2. 验证配置
+    const validation = validateAIConfig(config);
+    if (!validation.valid) {
+      return res.status(400).json({ success: false, message: validation.message });
+    }
+    
+    // 3. 执行测试请求
+    const messages = [
+      { role: 'system', content: 'You are a helpful assistant. Response with "OK" only.' }, 
+      { role: 'user', content: 'Connection test. Respond with OK.' }
+    ];
+    
     const startTime = Date.now();
-    const result = await callAI(config, messages);
-    res.json({ success: true, responseTime: `${Date.now() - startTime}ms` });
+    const aiResponse = await callAI(config, messages);
+    const responseTime = Date.now() - startTime;
+
+    if (!aiResponse) {
+      throw new Error('AI 未返回任何内容');
+    }
+
+    res.json({ 
+      success: true, 
+      responseTime: `${responseTime}ms`,
+      preview: aiResponse.substring(0, 100) + (aiResponse.length > 100 ? '...' : '')
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: `连接失败: ${error.message}` });
+    console.error('AI Test Connection Error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message || '连接失败' 
+    });
   }
 });
 

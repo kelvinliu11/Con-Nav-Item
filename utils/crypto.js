@@ -103,26 +103,7 @@ function getCryptoSecretSync() {
     return cachedSecret;
   }
   
-  // 1. 优先使用环境变量
-  if (process.env.CRYPTO_SECRET) {
-    cachedSecret = process.env.CRYPTO_SECRET;
-    return cachedSecret;
-  }
-  
-  // 2. 尝试从文件读取（兼容旧版本）
-  try {
-    if (fs.existsSync(CRYPTO_SECRET_PATH)) {
-      const secret = fs.readFileSync(CRYPTO_SECRET_PATH, 'utf-8').trim();
-      if (secret && secret.length >= 32) {
-        cachedSecret = secret;
-        return cachedSecret;
-      }
-    }
-  } catch (e) {
-    // 忽略文件读取失败
-  }
-  
-  // 3. 尝试同步读取数据库（最后的备选方案）
+  // 1. 尝试同步读取数据库（优先使用与数据绑定的密钥）
   try {
     const Database = require('better-sqlite3');
     if (fs.existsSync(DB_PATH)) {
@@ -134,13 +115,26 @@ function getCryptoSecretSync() {
           db.close();
           return cachedSecret;
         }
-      } catch (e) {
-        // settings表可能不存在
-      }
+      } catch (e) {}
       db.close();
     }
-  } catch (e) {
-    // better-sqlite3 可能不可用，忽略
+  } catch (e) {}
+
+  // 2. 尝试从文件读取（兼容旧版本）
+  try {
+    if (fs.existsSync(CRYPTO_SECRET_PATH)) {
+      const secret = fs.readFileSync(CRYPTO_SECRET_PATH, 'utf-8').trim();
+      if (secret && secret.length >= 32) {
+        cachedSecret = secret;
+        return cachedSecret;
+      }
+    }
+  } catch (e) {}
+
+  // 3. 环境变量（作为初始种子）
+  if (process.env.CRYPTO_SECRET) {
+    cachedSecret = process.env.CRYPTO_SECRET;
+    return cachedSecret;
   }
   
   // 4. 生成新密钥（临时使用，会在异步初始化时保存到数据库）
@@ -162,16 +156,12 @@ function getCryptoSecretSync() {
 }
 
 /**
- * 异步初始化密钥（优先从数据库读取）
+ * 异步初始化密钥（优先从数据库读取，确保数据与密钥的一致性）
  */
 async function initCryptoSecret() {
-  // 1. 优先使用环境变量
-  if (process.env.CRYPTO_SECRET) {
-    cachedSecret = process.env.CRYPTO_SECRET;
-    return cachedSecret;
-  }
-  
-  // 2. 尝试从数据库读取
+  // 1. 优先尝试从数据库读取
+  // 这样做的目的是确保即使在迁移服务器后（.env 中的 CRYPTO_SECRET 不一致），
+  // 也能正确使用与当前数据库匹配的密钥进行解密。
   try {
     const dbSecret = await getSecretFromDatabase();
     if (dbSecret && dbSecret.length >= 32) {
@@ -193,8 +183,20 @@ async function initCryptoSecret() {
   } catch (e) {
     // 忽略数据库读取失败
   }
+
+  // 2. 其次使用环境变量（通常作为新安装时的初始值）
+  if (process.env.CRYPTO_SECRET) {
+    cachedSecret = process.env.CRYPTO_SECRET;
+    
+    // 尝试保存到数据库，以便后续持久化
+    try {
+      await saveSecretToDatabase(cachedSecret);
+    } catch (e) {}
+    
+    return cachedSecret;
+  }
   
-  // 3. 尝试从文件读取（兼容旧版本，并迁移到数据库）
+  // 3. 尝试从文件读取（兼容旧版本）
   try {
     if (fs.existsSync(CRYPTO_SECRET_PATH)) {
       const fileSecret = fs.readFileSync(CRYPTO_SECRET_PATH, 'utf-8').trim();
@@ -355,10 +357,15 @@ function generateBackupSignature(data) {
  * 验证备份签名
  * @param {Buffer} data - 备份文件内容
  * @param {string} signature - 签名
+ * @param {string} [optionalSecret] - 可选的密钥（用于迁移时的自验证）
  * @returns {boolean} - 是否验证通过
  */
-function verifyBackupSignature(data, signature) {
-  const expectedSignature = generateBackupSignature(data);
+function verifyBackupSignature(data, signature, optionalSecret) {
+  const secretToUse = optionalSecret || cachedSecret || getCryptoSecretSync();
+  const hmac = crypto.createHmac('sha256', secretToUse + SALT);
+  hmac.update(data);
+  const expectedSignature = hmac.digest('hex');
+  
   // 使用时间安全的比较防止时序攻击
   return crypto.timingSafeEqual(
     Buffer.from(expectedSignature, 'hex'),

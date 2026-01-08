@@ -138,7 +138,7 @@
         </div>
 
         <!-- 任务进度 -->
-        <div class="task-panel" v-if="task.running">
+        <div class="task-panel" v-if="task.running && !showWizard">
           <div class="task-header">
             <span class="task-title">{{ taskTitle }}</span>
             <div class="task-counts">
