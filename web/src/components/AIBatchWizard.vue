@@ -149,15 +149,28 @@
               </button>
             </div>
 
-            <div v-if="taskStatus.errors?.length" class="error-log-container">
-              <div class="error-log-header">失败列表 ({{ taskStatus.errors.length }})</div>
+            <div v-if="taskStatus.errors && taskStatus.errors.length > 0" class="error-log-container">
+              <div class="error-log-header">
+                <span>失败列表 ({{ taskStatus.errors.length }})</span>
+                <span class="header-hint">可点击右侧按钮单独重试</span>
+              </div>
               <div class="error-log">
                 <div v-for="(err, i) in taskStatus.errors" :key="i" class="error-item">
                   <div class="error-info">
-                    <span class="error-title" :title="err.cardTitle">{{ err.cardTitle }}</span>
-                    <span class="error-msg" :title="err.error">{{ err.error }}</span>
+                    <div class="error-row">
+                      <span class="error-title" :title="err.cardTitle">{{ err.cardTitle || '未知卡片' }}</span>
+                      <span class="error-time">{{ formatTime(err.time) }}</span>
+                    </div>
+                    <div class="error-msg" :title="err.error">{{ err.error || '未知错误原因' }}</div>
                   </div>
-                  <button class="btn xs outline retry-btn" @click="retryCard(err)" :disabled="starting || taskRunning">重试</button>
+                  <button 
+                    class="btn xs outline retry-btn" 
+                    @click.stop="retryCard(err)" 
+                    :disabled="starting || taskRunning"
+                    title="重试此卡片"
+                  >
+                    重试
+                  </button>
                 </div>
               </div>
             </div>
@@ -249,7 +262,7 @@ export default {
     // 实时同步任务状态到本地，用于任务结束后的显示
     activeTask: {
       handler(val) {
-        if (val && val.running) {
+        if (val) {
           this.localTaskStatus = { ...val };
         }
       },
@@ -310,14 +323,23 @@ export default {
       await this.doStartTask(this.filteredCards.map(c => c.id));
     },
     async retryCard(errItem) {
-      if (!errItem.cardId) return;
+      if (!errItem.cardId) {
+        alert('无法重试：该错误没有关联的卡片 ID');
+        return;
+      }
       await this.doStartTask([errItem.cardId]);
     },
     async retryAllFailed() {
+      if (!this.taskStatus.errors || this.taskStatus.errors.length === 0) return;
+      
       const failedIds = this.taskStatus.errors
         .map(e => e.cardId)
-        .filter(id => !!id);
-      if (failedIds.length === 0) return;
+        .filter(id => !!id && id !== 0);
+        
+      if (failedIds.length === 0) {
+        alert('没有可重试的卡片（部分系统错误无法直接重试）');
+        return;
+      }
       await this.doStartTask(failedIds);
     },
     async doStartTask(cardIds) {
@@ -361,6 +383,11 @@ export default {
     },
     extractDomain(url) {
       try { return new URL(url).hostname.replace('www.', ''); } catch { return url; }
+    },
+    formatTime(timestamp) {
+      if (!timestamp) return '';
+      const date = new Date(timestamp);
+      return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
     }
   }
 };
@@ -431,15 +458,20 @@ textarea.input { resize: vertical; }
 .stat.fail { color: #ef4444; }
 .retry-all-btn { margin-left: auto; }
 
-.error-log-container { margin-top: 16px; border: 1px solid #fee2e2; border-radius: 10px; overflow: hidden; }
-.error-log-header { padding: 8px 12px; background: #fef2f2; font-size: 13px; font-weight: 600; color: #b91c1c; border-bottom: 1px solid #fee2e2; }
-.error-log { max-height: 200px; overflow-y: auto; padding: 0; background: #fff; }
-.error-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid #fef2f2; gap: 12px; }
+.error-log-container { margin-top: 16px; border: 1px solid #fee2e2; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.05); }
+.error-log-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #fef2f2; border-bottom: 1px solid #fee2e2; }
+.error-log-header span:first-child { font-size: 13px; font-weight: 600; color: #b91c1c; }
+.header-hint { font-size: 11px; color: #f87171; font-weight: normal; }
+.error-log { max-height: 180px; overflow-y: auto; padding: 0; background: #fff; }
+.error-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid #fef2f2; gap: 12px; }
 .error-item:last-child { border-bottom: none; }
-.error-info { flex: 1; display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
-.error-item .error-title { font-size: 13px; font-weight: 600; color: #374151; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.error-item .error-msg { font-size: 12px; color: #6b7280; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.retry-btn { flex-shrink: 0; }
+.error-info { flex: 1; display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
+.error-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.error-title { font-size: 13px; font-weight: 600; color: #374151; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.error-time { font-size: 11px; color: #9ca3af; font-family: monospace; flex-shrink: 0; }
+.error-msg { font-size: 12px; color: #6b7280; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.4; }
+.retry-btn { flex-shrink: 0; border-color: #fecaca; color: #ef4444; }
+.retry-btn:hover { background: #fef2f2; border-color: #f87171; }
 
 .task-actions { margin-top: 16px; text-align: center; }
 
