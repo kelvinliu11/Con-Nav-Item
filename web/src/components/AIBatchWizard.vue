@@ -227,6 +227,7 @@ export default {
       previews: [],
       previewing: false,
       taskDone: false,
+      isExecuting: false, // 本地执行状态，点击开始后立即为true
       localTaskStatus: { current: 0, total: 0, successCount: 0, failCount: 0, currentCard: '', errors: [] },
       starting: false,
       stopping: false,
@@ -244,8 +245,8 @@ export default {
       return this.activeTask.running ? this.activeTask : this.localTaskStatus;
     },
     taskRunning() {
-      // 优先使用父组件状态，但也考虑本地状态（用于启动瞬间）
-      return this.activeTask.running || this.localTaskStatus.running;
+      // 本地执行状态或父组件任务状态，任一为true则显示进度界面
+      return this.isExecuting || this.activeTask.running;
     },
     progressPercent() {
       const s = this.taskStatus;
@@ -255,21 +256,24 @@ export default {
   watch: {
     visible(v) {
       if (v) this.init();
+      // 不再在 visible 改变时清理 SSE，由父组件管理
     },
     'activeTask.running'(newVal, oldVal) {
-      // 只有当任务确实从运行中变为停止时，才标记完成
-      // oldVal 必须明确是 true（而非 undefined 或 false）
+      // 当父组件任务开始时，重置完成状态
+      if (newVal === true) {
+        this.taskDone = false;
+      }
+      // 当任务从运行中变为停止，且当前在执行步骤时，标记为完成
       if (oldVal === true && newVal === false && this.step === 3) {
         this.taskDone = true;
-        this.localTaskStatus.running = false;
+        this.isExecuting = false; // 同步关闭本地执行状态
       }
     },
+    // 实时同步任务状态到本地，用于任务结束后的显示
     activeTask: {
       handler(val) {
         if (val) {
-          // 同步父组件状态，但保留本地 running 状态直到父组件明确更新
-          const running = val.running !== undefined ? val.running : this.localTaskStatus.running;
-          this.localTaskStatus = { ...val, running };
+          this.localTaskStatus = { ...val };
         }
       },
       deep: true
@@ -280,6 +284,7 @@ export default {
       this.step = 0;
       this.previews = [];
       this.taskDone = false;
+      this.isExecuting = false;
       this.localTaskStatus = { current: 0, total: 0, successCount: 0, failCount: 0, currentCard: '', errors: [] };
 
       try {
@@ -351,16 +356,16 @@ export default {
     async doStartTask(cardIds) {
       this.starting = true;
       this.taskDone = false;
+      this.isExecuting = true; // 立即设置本地执行状态，确保界面切换到进度显示
       
-      // 先重置本地状态，确保界面立即显示"正在处理"
-      this.localTaskStatus = { 
-        current: 0, 
-        total: cardIds.length, 
-        successCount: 0, 
-        failCount: 0, 
-        currentCard: '启动中...', 
-        errors: [],
-        running: true 
+      // 初始化本地状态用于立即显示
+      this.localTaskStatus = {
+        current: 0,
+        total: cardIds.length,
+        successCount: 0,
+        failCount: 0,
+        currentCard: '启动中...',
+        errors: []
       };
       
       try {
@@ -370,21 +375,21 @@ export default {
           strategy: { mode: this.strategy.mode, style: this.strategy.style, customPrompt: this.strategy.customPrompt }
         };
 
-        // 立即向父组件发送启动信号，设置 running: true
+        // 向父组件发送启动信号
         this.$emit('start', {
           total: payload.cardIds.length,
           types: payload.types,
           mode: payload.strategy.mode,
           current: 0,
           currentCard: '启动中...',
-          errors: [],
-          running: true
+          errors: []
         });
 
         const { data } = await aiStartBatchTask(payload);
         
         if (!data.success || data.total === 0) {
           alert(data.message || '没有需要处理的卡片');
+          this.isExecuting = false;
           // 如果是主任务启动失败则关闭，重试失败则保持
           if (cardIds.length === this.filteredCards.length) {
             this.$emit('close'); 
@@ -392,6 +397,7 @@ export default {
         }
       } catch (e) {
         alert('启动失败: ' + (e.response?.data?.message || e.message));
+        this.isExecuting = false;
       }
       this.starting = false;
     },
