@@ -128,24 +128,62 @@
             </button>
           </div>
 
-          <div v-if="taskRunning || taskDone" class="task-execution-view">
-            <TaskProgress :task="displayTask" />
-            
-            <ErrorLogList 
-              v-if="displayTask.failCount > 0 || !taskRunning"
-              :errors="displayTask.errors" 
-              :disabled="starting || taskRunning"
-              @retry-all="retryAllFailed"
-              @retry-single="retryCard"
-              empty-text="处理完成，无失败项"
-            />
+            <div v-if="taskRunning || taskDone" class="task-progress">
+              <div class="progress-header">
+                <span>{{ taskDone ? '✅ 任务完成' : '⏳ 正在处理...' }}</span>
+                <span>{{ taskStatus.current }} / {{ taskStatus.total }}</span>
+              </div>
+              <div class="progress-bar">
+                <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
+              </div>
+              <div class="progress-info">
+                <span v-if="taskStatus.currentCard">当前：{{ taskStatus.currentCard }}</span>
+                <span v-if="taskStatus.eta">预计剩余：{{ taskStatus.eta }}</span>
+              </div>
 
-            <div class="task-actions" v-if="taskRunning">
-              <button class="btn danger" @click="stopTask" :disabled="stopping">
-                {{ stopping ? '停止中...' : '⏹️ 停止任务' }}
-              </button>
+              <div class="task-stats">
+                <span class="stat success">✓ 成功 {{ taskStatus.successCount || 0 }}</span>
+                <span class="stat fail">✗ 失败 {{ taskStatus.failCount || 0 }}</span>
+                <button v-if="taskDone && taskStatus.failCount > 0" class="btn sm outline retry-all-btn" @click="retryAllFailed" :disabled="starting || taskRunning">
+                  🔄 重试全部失败
+                </button>
+              </div>
+
+              <div v-if="taskStatus.failCount > 0" class="error-log-container">
+                <div class="error-log-header">
+                  <span>失败详情 ({{ taskStatus.errors ? taskStatus.errors.length : 0 }}/{{ taskStatus.failCount }})</span>
+                  <span class="header-hint">可点击右侧按钮单独重试</span>
+                </div>
+                <div class="error-log" v-if="taskStatus.errors && taskStatus.errors.length > 0">
+                  <div v-for="(err, i) in taskStatus.errors" :key="i" class="error-item">
+                    <div class="error-info">
+                      <div class="error-row">
+                        <span class="error-title" :title="err.cardTitle">{{ err.cardTitle || '未知卡片' }}</span>
+                        <span class="error-time">{{ formatTime(err.time) }}</span>
+                      </div>
+                      <div class="error-msg" :title="err.error">{{ err.error || '未知错误原因' }}</div>
+                    </div>
+                    <button 
+                      class="btn xs outline retry-btn" 
+                      @click.stop="retryCard(err)" 
+                      :disabled="starting || taskRunning"
+                      title="重试此卡片"
+                    >
+                      重试
+                    </button>
+                  </div>
+                </div>
+                <div v-else class="error-empty-hint">
+                  正在加载失败详情...
+                </div>
+              </div>
+
+              <div class="task-actions" v-if="taskRunning">
+                <button class="btn danger" @click="stopTask" :disabled="stopping">
+                  {{ stopping ? '停止中...' : '⏹️ 停止任务' }}
+                </button>
+              </div>
             </div>
-          </div>
         </div>
       </div>
 
@@ -166,12 +204,9 @@
 
 <script>
 import { getMenus, getTags, aiFilterCards, aiPreview, aiStartBatchTask, aiStopTask } from '../api';
-import TaskProgress from './TaskProgress.vue';
-import ErrorLogList from './ErrorLogList.vue';
 
 export default {
   name: 'AIBatchWizard',
-  components: { TaskProgress, ErrorLogList },
   props: { 
     visible: Boolean,
     activeTask: { type: Object, default: () => ({ running: false }) }
@@ -192,10 +227,10 @@ export default {
       previews: [],
       previewing: false,
       taskDone: false,
+      localTaskStatus: { current: 0, total: 0, successCount: 0, failCount: 0, currentCard: '', errors: [] },
       starting: false,
       stopping: false,
-      // 用于在任务结束后保持最后的状态
-      lastTaskState: null
+      eventSource: null
     };
   },
   computed: {
@@ -204,37 +239,37 @@ export default {
       if (this.step === 1) return this.strategy.types.length > 0;
       return true;
     },
-    taskRunning() {
-      return this.activeTask?.running || false;
+    taskStatus() {
+      // 优先使用父组件传递的任务状态，否则使用本地状态（用于非运行状态下的最后一次快照）
+      return this.activeTask.running ? this.activeTask : this.localTaskStatus;
     },
-    displayTask() {
-      // 核心逻辑：如果任务正在运行，始终使用实时的 activeTask
-      if (this.taskRunning) {
-        return this.activeTask;
-      }
-      // 如果任务结束了，使用最后一次记录的快照
-      return this.lastTaskState || this.activeTask || {};
+    taskRunning() {
+      return this.activeTask.running;
+    },
+    progressPercent() {
+      const s = this.taskStatus;
+      return s.total ? Math.round((s.current / s.total) * 100) : 0;
     }
   },
   watch: {
     visible(v) {
       if (v) this.init();
+      // 不再在 visible 改变时清理 SSE，由父组件管理
     },
     'activeTask.running'(newVal, oldVal) {
+      // 当任务从运行中变为停止，且当前在执行步骤时，标记为完成
       if (oldVal === true && newVal === false && this.step === 3) {
         this.taskDone = true;
       }
     },
+    // 实时同步任务状态到本地，用于任务结束后的显示
     activeTask: {
       handler(val) {
-        // 只要任务在运行，或者刚刚结束，就更新快照
-        // 关键：即使 running 为 false，只要它包含 errors，我们就更新快照
-        if (val && (val.running || (val.errors && val.errors.length > 0) || val.total > 0)) {
-          this.lastTaskState = JSON.parse(JSON.stringify(val));
+        if (val) {
+          this.localTaskStatus = { ...val };
         }
       },
-      deep: true,
-      immediate: true
+      deep: true
     }
   },
   methods: {
@@ -242,7 +277,7 @@ export default {
       this.step = 0;
       this.previews = [];
       this.taskDone = false;
-      this.lastTaskState = null;
+      this.localTaskStatus = { current: 0, total: 0, successCount: 0, failCount: 0, currentCard: '', errors: [] };
 
       try {
         const [menuRes, tagRes] = await Promise.all([getMenus(), getTags()]);
@@ -298,10 +333,9 @@ export default {
       await this.doStartTask([errItem.cardId]);
     },
     async retryAllFailed() {
-      const errors = this.displayTask.errors || [];
-      if (errors.length === 0) return;
+      if (!this.taskStatus.errors || this.taskStatus.errors.length === 0) return;
       
-      const failedIds = errors
+      const failedIds = this.taskStatus.errors
         .map(e => e.cardId)
         .filter(id => !!id && id !== 0);
         
@@ -321,22 +355,21 @@ export default {
           strategy: { mode: this.strategy.mode, style: this.strategy.style, customPrompt: this.strategy.customPrompt }
         };
 
-        // 立即向父组件发送启动信号，由父组件统一管理状态
+        // 立即向父组件发送启动信号
         this.$emit('start', {
           total: payload.cardIds.length,
           types: payload.types,
           mode: payload.strategy.mode,
           current: 0,
           currentCard: '启动中...',
-          errors: [],
-          successCount: 0,
-          failCount: 0
+          errors: []
         });
 
         const { data } = await aiStartBatchTask(payload);
         
         if (!data.success || data.total === 0) {
           alert(data.message || '没有需要处理的卡片');
+          // 如果是主任务启动失败则关闭，重试失败则保持
           if (cardIds.length === this.filteredCards.length) {
             this.$emit('close'); 
           }
@@ -349,10 +382,15 @@ export default {
     async stopTask() {
       this.stopping = true;
       try { await aiStopTask(); } catch {}
-      setTimeout(() => { this.stopping = false; }, 1000);
+      setTimeout(() => { this.stopping = false; }, 2000);
     },
     extractDomain(url) {
       try { return new URL(url).hostname.replace('www.', ''); } catch { return url; }
+    },
+    formatTime(timestamp) {
+      if (!timestamp) return '';
+      const date = new Date(timestamp);
+      return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
     }
   }
 };
@@ -411,7 +449,35 @@ textarea.input { resize: vertical; }
 .execute-confirm p { margin: 8px 0; color: #374151; }
 .execute-confirm strong { color: #3b82f6; }
 
-.task-execution-view { padding: 10px 0; }
+.task-progress { padding: 10px 0; }
+.progress-header { display: flex; justify-content: space-between; margin-bottom: 10px; font-weight: 500; }
+.progress-bar { height: 10px; background: #e5e7eb; border-radius: 5px; overflow: hidden; }
+.progress-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6); transition: width 0.3s; }
+.progress-info { display: flex; justify-content: space-between; margin-top: 8px; font-size: 13px; color: #6b7280; }
+
+.task-stats { display: flex; align-items: center; gap: 16px; margin-top: 12px; }
+.stat { font-size: 14px; }
+.stat.success { color: #10b981; }
+.stat.fail { color: #ef4444; }
+.retry-all-btn { margin-left: auto; }
+
+.error-empty-hint { padding: 20px; text-align: center; color: #9ca3af; font-size: 13px; font-style: italic; background: #fff; }
+
+.error-log-container { margin-top: 16px; border: 1px solid #fee2e2; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.05); }
+.error-log-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #fef2f2; border-bottom: 1px solid #fee2e2; }
+.error-log-header span:first-child { font-size: 13px; font-weight: 600; color: #b91c1c; }
+.header-hint { font-size: 11px; color: #f87171; font-weight: normal; }
+.error-log { max-height: 180px; overflow-y: auto; padding: 0; background: #fff; }
+.error-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid #fef2f2; gap: 12px; }
+.error-item:last-child { border-bottom: none; }
+.error-info { flex: 1; display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
+.error-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.error-title { font-size: 13px; font-weight: 600; color: #374151; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.error-time { font-size: 11px; color: #9ca3af; font-family: monospace; flex-shrink: 0; }
+.error-msg { font-size: 12px; color: #6b7280; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.4; }
+.retry-btn { flex-shrink: 0; border-color: #fecaca; color: #ef4444; }
+.retry-btn:hover { background: #fef2f2; border-color: #f87171; }
+
 .task-actions { margin-top: 16px; text-align: center; }
 
 .wizard-footer { display: flex; justify-content: space-between; padding: 16px 20px; border-top: 1px solid #e5e7eb; }
@@ -423,7 +489,9 @@ textarea.input { resize: vertical; }
 .btn.primary { background: #3b82f6; border-color: #3b82f6; color: #fff; }
 .btn.primary:hover:not(:disabled) { background: #2563eb; }
 .btn.danger { background: #ef4444; border-color: #ef4444; color: #fff; }
+.btn.outline { background: transparent; }
 .btn.sm { padding: 6px 12px; font-size: 13px; }
+.btn.xs { padding: 4px 8px; font-size: 11px; border-radius: 4px; }
 .btn.lg { padding: 14px 28px; font-size: 16px; }
 
 :root.dark .wizard-modal { background: #1f2937; }
@@ -434,4 +502,11 @@ textarea.input { resize: vertical; }
 :root.dark .filter-result, :root.dark .more-hint { background: #374151; }
 :root.dark .card-preview-list, :root.dark .preview-card { border-color: #374151; }
 :root.dark .card-preview-item { border-color: #374151; }
+:root.dark .error-log-container { border-color: #450a0a; }
+:root.dark .error-log-header { background: #450a0a; color: #fecaca; border-color: #450a0a; }
+:root.dark .error-log { background: #1f2937; }
+:root.dark .error-item { border-color: #374151; }
+:root.dark .error-item .error-title { color: #e5e7eb; }
+:root.dark .error-item .error-msg { color: #9ca3af; }
 </style>
+
