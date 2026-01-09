@@ -3768,7 +3768,7 @@ async function saveCardEdit() {
   width: 90%;
   position: relative;
   z-index: 10;
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.3); /* 降低边框亮度，减少框架感 */
   transition: all 0.3s ease;
 }
 
@@ -3848,6 +3848,7 @@ async function saveCardEdit() {
   min-height: 100vh;
   /* 默认背景图 - 山峦云海 */
   background-image: url('https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&h=1080&fit=crop');
+  background-color: #1a1a1a; /* 添加深色背景色，防止加载瞬间闪烁 */
   background-size: cover;
   background-position: center;
   background-attachment: fixed;

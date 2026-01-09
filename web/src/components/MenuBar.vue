@@ -230,6 +230,7 @@ onUnmounted(() => {
   position: relative;
   overflow: hidden;
   letter-spacing: 0.02em;
+  outline: none; /* 移除焦点外框 */
 }
 
 .menu-bar button::before {
@@ -247,7 +248,7 @@ onUnmounted(() => {
 
 .menu-bar button:hover {
   color: #40a9ff;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(64, 169, 255, 0.12); /* 更改为浅蓝色调，避免白色边框感 */
   transform: translateY(-1px);
 }
 
@@ -288,11 +289,11 @@ onUnmounted(() => {
   visibility: hidden;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 1000;
-  box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.4),
-    0 0 1px rgba(255, 255, 255, 0.1) inset;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  margin-top: 6px;
+    box-shadow: 
+      0 8px 32px rgba(0, 0, 0, 0.4),
+      0 0 1px rgba(255, 255, 255, 0.1) inset;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    margin-top: 6px;
   padding: 10px 0;
 }
 

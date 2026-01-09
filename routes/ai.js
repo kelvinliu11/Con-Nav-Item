@@ -549,6 +549,13 @@ function buildUnifiedPrompt(card, types, existingTags) {
   if (types.includes('description')) rules.push('- description: 10-25字简洁功能描述');
   if (types.includes('tags')) rules.push('- tags: 2-4个标签数组，优先用现有标签');
 
+  const commonRules = `
+注意：
+1. 严禁输出任何思考过程、内心独白或“我无法访问”、“请提供更多信息”等反馈。
+2. 即使无法访问，也要根据 URL 和名称尝试推测一个最合理的简洁描述，或返回空 JSON，绝对不要输出解释性文字。
+3. 不要包含任何 HTML 标签或 markdown 格式，只返回纯文本内容。
+`;
+
   return [
     {
       role: 'system',
@@ -560,7 +567,8 @@ ${rules.join('\n')}
   ${types.includes('name') ? '"name": "GitHub",' : ''}
   ${types.includes('description') ? '"description": "全球最大的代码托管和协作平台",' : ''}
   ${types.includes('tags') ? '"tags": ["代码托管", "开源"]' : ''}
-}`
+}
+${commonRules}`
     },
     {
       role: 'user',
@@ -610,6 +618,8 @@ function parseUnifiedResponse(text, types, existingTags) {
 function buildNamePrompt(card) {
   const domain = extractDomain(card.url);
   
+  const commonRules = '\n注意：严禁输出任何思考过程、内心独白或“我无法访问”等反馈，直接输出结果。';
+  
   return [
     {
       role: 'system',
@@ -620,7 +630,7 @@ function buildNamePrompt(card) {
 - 中文 2-8 字，英文/品牌名 2-15 字符
 - 优先使用官方品牌名或简称
 - 知名网站用大众熟知的名称
-- 不加"官网"、"首页"等后缀`
+- 不加"官网"、"首页"等后缀${commonRules}`
     },
     {
       role: 'user',
@@ -638,6 +648,8 @@ function buildNamePrompt(card) {
 function buildDescriptionPrompt(card) {
   const domain = extractDomain(card.url);
   
+  const commonRules = '\n注意：严禁输出任何思考过程、内心独白或“我无法访问”等反馈，直接输出描述。';
+  
   return [
     {
       role: 'system',
@@ -646,7 +658,7 @@ function buildDescriptionPrompt(card) {
 规则：
 - 直接输出描述，无前缀/引号
 - 10-25 个中文字符
-- 突出核心功能或独特价值`
+- 突出核心功能或独特价值${commonRules}`
     },
     {
       role: 'user',
@@ -666,6 +678,8 @@ function buildTagsPrompt(card, existingTags) {
     ? existingTags.slice(0, 25).join('、')
     : '暂无';
   
+  const commonRules = '\n注意：严禁输出任何思考过程、内心独白或“我无法访问”等反馈，严格按 JSON 格式输出结果。';
+  
   return [
     {
       role: 'system',
@@ -676,7 +690,7 @@ function buildTagsPrompt(card, existingTags) {
 2. 必要时才建议新标签（2-4字）
 3. 严格按 JSON 格式输出
 
-格式：{"tags":["现有标签"],"newTags":["新标签"]}`
+格式：{"tags":["现有标签"],"newTags":["新标签"]}${commonRules}`
     },
     {
       role: 'user',
@@ -693,35 +707,52 @@ function buildTagsPrompt(card, existingTags) {
 
 // AI 思考过程的特征模式（需要过滤掉）
 const AI_THINKING_PATTERNS = [
-  /^(我需要|让我|由于我|首先|接下来|根据|分析|查看|访问|了解|无法).{0,50}/,
-  /^(This|I need|Let me|Since I|First|Based on|According to).{0,50}/i,
-  /(网站|地址|链接|URL).{0,20}(内容|信息|功能|特点)/,
+  /(我需要|让我|由于我|首先|接下来|根据|分析|查看|访问|了解|无法|我将|我无法).{0,50}(网站|内容|信息|功能|特点|地址|链接|URL)/,
+  /^(我需要|让我|由于我|首先|接下来|根据|分析|查看|访问|了解|无法|好的|没问题)/,
+  /^(This|I need|Let me|Since I|First|Based on|According to|Okay|Sure).{0,50}/i,
   /无法(直接)?访问/,
-  /外部(网站|链接)/
+  /外部(网站|链接|地址)/,
+  /请提供(更多|详细)/,
+  /核心功能是什么/
 ];
 
 function isAIThinkingText(text) {
-  if (!text || text.length < 10) return false;
-  return AI_THINKING_PATTERNS.some(pattern => pattern.test(text));
+  if (!text || text.length < 5) return false;
+  
+  // 移除常见的标签和代码块标记再检查
+  const clean = text.replace(/<[^>]+>/g, '').trim();
+  
+  return AI_THINKING_PATTERNS.some(pattern => pattern.test(clean));
+}
+
+function stripThoughtTags(text) {
+  if (!text) return '';
+  return text
+    .replace(/<thought>[\s\S]*?<\/thought>/gi, '')
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+    .replace(/【思考】[\s\S]*?【\/思考】/g, '')
+    .trim();
 }
 
 function cleanName(text) {
   if (!text) return '';
   
+  let processed = stripThoughtTags(text);
+  
   // 检测是否为 AI 思考过程文本
-  if (isAIThinkingText(text)) {
-    console.warn('Detected AI thinking text in name, rejecting:', text.substring(0, 50));
+  if (isAIThinkingText(processed)) {
+    console.warn('Detected AI thinking text in name, rejecting:', processed.substring(0, 50));
     return '';
   }
   
-  return text
+  return processed
     .replace(/```[\s\S]*?```/g, '')
     .replace(/^["'「」『』""'']+|["'「」『』""'']+$/g, '')
     .replace(/^(名称[：:]\s*|网站名[：:]\s*|Name[：:]\s*)/i, '')
     .replace(/[\r\n]+/g, '')
     .replace(/\s+/g, ' ')
     .replace(/(官网|首页|官方网站|Official|Home)$/i, (match, p1) => {
-      return text.length <= 4 ? match : '';
+      return processed.length <= 4 ? match : '';
     })
     .trim()
     .substring(0, 20);
@@ -730,13 +761,15 @@ function cleanName(text) {
 function cleanDescription(text) {
   if (!text) return '';
   
+  let processed = stripThoughtTags(text);
+  
   // 检测是否为 AI 思考过程文本
-  if (isAIThinkingText(text)) {
-    console.warn('Detected AI thinking text in description, rejecting:', text.substring(0, 50));
+  if (isAIThinkingText(processed)) {
+    console.warn('Detected AI thinking text in description, rejecting:', processed.substring(0, 50));
     return '';
   }
   
-  let cleaned = text
+  let cleaned = processed
     .replace(/```[\s\S]*?```/g, '')
     .replace(/^["'「」『』""'']+|["'「」『』""'']+$/g, '')
     .replace(/^(描述[：:]\s*|简介[：:]\s*|网站描述[：:]\s*|Description[：:]\s*)/i, '')
