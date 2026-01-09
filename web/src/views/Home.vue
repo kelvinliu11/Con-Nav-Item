@@ -3535,11 +3535,13 @@ async function saveCardEdit() {
 .menu-bar-fixed {
   position: fixed;
   top: .6rem;
-  left: 0;
-  width: 100vw;
+  left: 50%;
+  transform: translateX(-50%);
+  width: auto;
+  max-width: 100vw;
   z-index: 200;
-  pointer-events: none; /* 关键：防止固定容器遮挡下方交互或产生背景渲染问题 */
-  /* PC端默认透明背景 */
+  pointer-events: none;
+  contain: layout;
 }
 
 /* 移动端菜单栏添加背景，防止与卡片重叠 */
