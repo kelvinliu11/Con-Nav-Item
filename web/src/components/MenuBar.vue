@@ -281,13 +281,13 @@ onUnmounted(() => {
   cursor: grabbing;
 }
 
-/* 编辑模式下拉面板 - 无backdrop-filter */
+/* 编辑模式下拉面板 - 浅色半透明 */
 .menu-dropdown {
   position: absolute;
   top: 100%;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(20, 20, 25, 0.98);
+  background: rgba(255, 255, 255, 0.15);
   border-radius: 14px;
   min-width: max-content;
   white-space: nowrap;
@@ -295,8 +295,8 @@ onUnmounted(() => {
   visibility: hidden;
   transition: opacity 0.25s ease, visibility 0.25s ease, transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 1000;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   margin-top: 6px;
   padding: 12px 0;
   isolation: isolate;
@@ -462,13 +462,13 @@ onUnmounted(() => {
   display: none;
 }
 
-/* 非编辑模式二级菜单样式 - 无backdrop-filter */
+/* 非编辑模式二级菜单样式 - 浅色半透明 */
 .sub-menu {
   position: absolute;
   top: 100%;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(20, 20, 25, 0.98);
+  background: rgba(255, 255, 255, 0.15);
   border-radius: 14px;
   min-width: max-content;
   white-space: nowrap;
@@ -476,8 +476,8 @@ onUnmounted(() => {
   visibility: hidden;
   transition: opacity 0.25s ease, visibility 0.25s ease, transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 1000;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   margin-top: 6px;
   padding: 8px 0;
   isolation: isolate;
