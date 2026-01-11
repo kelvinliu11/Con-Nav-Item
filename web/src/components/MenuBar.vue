@@ -212,6 +212,7 @@ onUnmounted(() => {
 
 .menu-item {
   position: relative;
+  z-index: 1;
 }
 
 .menu-bar button {
