@@ -3758,20 +3758,18 @@ async function saveCardEdit() {
 .search-container {
   display: flex;
   align-items: center;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.95);
   border-radius: 28px;
   padding: 0.5rem 0.8rem;
   box-shadow: 
     0 8px 32px rgba(0, 0, 0, 0.12),
     0 2px 8px rgba(0, 0, 0, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
   max-width: 620px;
   width: 90%;
   position: relative;
   z-index: 10;
-  border: 1px solid rgba(255, 255, 255, 0.3); /* 降低边框亮度，减少框架感 */
+  border: 1px solid rgba(255, 255, 255, 0.3);
   transition: all 0.3s ease;
 }
 
