@@ -9,85 +9,13 @@
       @mouseleave="scheduleHideSubMenu(menu.id)"
     >
       <button 
+        ref="menuBtnRefs"
         @click="handleMenuClick(menu)" 
         :class="{active: menu.id === activeId, 'drag-handle': editMode}"
+        :data-menu-id="menu.id"
       >
         {{ menu.name }}
       </button>
-      
-      <!-- 编辑模式下的下拉面板 - 按需渲染 -->
-      <div 
-        v-if="editMode && hoveredMenuId === menu.id" 
-        class="menu-dropdown"
-        @mouseenter="cancelHideSubMenu(menu.id)"
-        @mouseleave="scheduleHideSubMenu(menu.id)"
-      >
-        <!-- 主菜单操作按钮 -->
-        <div class="menu-actions-row">
-          <span class="menu-actions-label">菜单操作</span>
-          <div class="menu-actions">
-            <button class="action-btn edit-btn" @click.stop="$emit('editMenu', menu)" title="编辑">✏️</button>
-            <button class="action-btn del-btn" @click.stop="$emit('deleteMenu', menu)" title="删除">🗑️</button>
-          </div>
-        </div>
-        
-        <!-- 子菜单列表 -->
-        <div v-if="menu.subMenus && menu.subMenus.length > 0" class="sub-menu-list">
-          <div 
-            v-for="(subMenu, index) in menu.subMenus" 
-            :key="subMenu.id" 
-            class="sub-menu-row"
-            :data-submenu-id="subMenu.id"
-          >
-            <button 
-              @click="$emit('select', subMenu, menu)"
-              :class="{active: subMenu.id === activeSubMenuId}"
-              class="sub-menu-item"
-            >
-              {{ subMenu.name }}
-            </button>
-            <div class="sub-menu-actions">
-              <button 
-                v-if="index > 0"
-                class="action-btn-sm sort-btn" 
-                @click.stop="$emit('moveSubMenuUp', subMenu, menu, index)" 
-                title="上移"
-              >↑</button>
-              <button 
-                v-if="index < menu.subMenus.length - 1"
-                class="action-btn-sm sort-btn" 
-                @click.stop="$emit('moveSubMenuDown', subMenu, menu, index)" 
-                title="下移"
-              >↓</button>
-              <button class="action-btn-sm" @click.stop="$emit('editSubMenu', subMenu, menu)" title="编辑">✏️</button>
-              <button class="action-btn-sm" @click.stop="$emit('deleteSubMenu', subMenu, menu)" title="删除">🗑️</button>
-            </div>
-          </div>
-        </div>
-        
-        <!-- 添加子菜单按钮 -->
-        <button class="add-sub-menu-btn" @click.stop="$emit('addSubMenu', menu)">
-          + 添加子菜单
-        </button>
-      </div>
-      
-      <!-- 非编辑模式下的二级菜单 - 按需渲染 -->
-      <div 
-        v-if="!editMode && hoveredMenuId === menu.id && menu.subMenus && menu.subMenus.length > 0" 
-        class="sub-menu"
-        @mouseenter="cancelHideSubMenu(menu.id)"
-        @mouseleave="scheduleHideSubMenu(menu.id)"
-      >
-        <div v-for="subMenu in menu.subMenus" :key="subMenu.id" class="sub-menu-row">
-          <button 
-            @click="$emit('select', subMenu, menu)"
-            :class="{active: subMenu.id === activeSubMenuId}"
-            class="sub-menu-item"
-          >
-            {{ subMenu.name }}
-          </button>
-        </div>
-      </div>
     </div>
     
     <!-- 编辑模式下添加菜单按钮 -->
@@ -95,10 +23,71 @@
       <button class="add-menu-btn" @click="$emit('addMenu')">+ 添加菜单</button>
     </div>
   </nav>
+  
+  <!-- 子菜单使用 Teleport 渲染到 body，避免层叠上下文问题 -->
+  <Teleport to="body">
+    <!-- 编辑模式下拉面板 -->
+    <div 
+      v-if="editMode && hoveredMenuId && hoveredMenu"
+      class="menu-dropdown-portal"
+      :style="dropdownStyle"
+      @mouseenter="cancelHideSubMenu(hoveredMenuId)"
+      @mouseleave="scheduleHideSubMenu(hoveredMenuId)"
+    >
+      <div class="menu-actions-row">
+        <span class="menu-actions-label">菜单操作</span>
+        <div class="menu-actions">
+          <button class="action-btn edit-btn" @click.stop="$emit('editMenu', hoveredMenu)" title="编辑">✏️</button>
+          <button class="action-btn del-btn" @click.stop="$emit('deleteMenu', hoveredMenu)" title="删除">🗑️</button>
+        </div>
+      </div>
+      <div v-if="hoveredMenu.subMenus && hoveredMenu.subMenus.length > 0" class="sub-menu-list">
+        <div 
+          v-for="(subMenu, index) in hoveredMenu.subMenus" 
+          :key="subMenu.id" 
+          class="sub-menu-row"
+        >
+          <button 
+            @click="$emit('select', subMenu, hoveredMenu)"
+            :class="{active: subMenu.id === activeSubMenuId}"
+            class="sub-menu-item"
+          >
+            {{ subMenu.name }}
+          </button>
+          <div class="sub-menu-actions">
+            <button v-if="index > 0" class="action-btn-sm sort-btn" @click.stop="$emit('moveSubMenuUp', subMenu, hoveredMenu, index)" title="上移">↑</button>
+            <button v-if="index < hoveredMenu.subMenus.length - 1" class="action-btn-sm sort-btn" @click.stop="$emit('moveSubMenuDown', subMenu, hoveredMenu, index)" title="下移">↓</button>
+            <button class="action-btn-sm" @click.stop="$emit('editSubMenu', subMenu, hoveredMenu)" title="编辑">✏️</button>
+            <button class="action-btn-sm" @click.stop="$emit('deleteSubMenu', subMenu, hoveredMenu)" title="删除">🗑️</button>
+          </div>
+        </div>
+      </div>
+      <button class="add-sub-menu-btn" @click.stop="$emit('addSubMenu', hoveredMenu)">+ 添加子菜单</button>
+    </div>
+    
+    <!-- 非编辑模式子菜单 -->
+    <div 
+      v-if="!editMode && hoveredMenuId && hoveredMenu && hoveredMenu.subMenus && hoveredMenu.subMenus.length > 0"
+      class="sub-menu-portal"
+      :style="dropdownStyle"
+      @mouseenter="cancelHideSubMenu(hoveredMenuId)"
+      @mouseleave="scheduleHideSubMenu(hoveredMenuId)"
+    >
+      <div v-for="subMenu in hoveredMenu.subMenus" :key="subMenu.id" class="sub-menu-row">
+        <button 
+          @click="$emit('select', subMenu, hoveredMenu)"
+          :class="{active: subMenu.id === activeSubMenuId}"
+          class="sub-menu-item"
+        >
+          {{ subMenu.name }}
+        </button>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup>
-import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { ref, watch, nextTick, onMounted, onUnmounted, computed } from 'vue';
 import Sortable from 'sortablejs';
 
 const props = defineProps({ 
@@ -112,24 +101,49 @@ const emit = defineEmits(['select', 'addMenu', 'editMenu', 'deleteMenu', 'addSub
 
 const hoveredMenuId = ref(null);
 const menuBarRef = ref(null);
+const dropdownPosition = ref({ top: 0, left: 0 });
 let sortableInstance = null;
 let hideTimer = null;
+
+// 计算当前悬停的菜单对象
+const hoveredMenu = computed(() => {
+  if (!hoveredMenuId.value || !props.menus) return null;
+  return props.menus.find(m => m.id === hoveredMenuId.value);
+});
+
+// 计算下拉框位置样式
+const dropdownStyle = computed(() => ({
+  position: 'fixed',
+  top: `${dropdownPosition.value.top}px`,
+  left: `${dropdownPosition.value.left}px`,
+  zIndex: 10000
+}));
 
 function handleMenuClick(menu) {
   emit('select', menu);
 }
 
+function updateDropdownPosition(menuId) {
+  const menuBtn = menuBarRef.value?.querySelector(`button[data-menu-id="${menuId}"]`);
+  if (menuBtn) {
+    const rect = menuBtn.getBoundingClientRect();
+    dropdownPosition.value = {
+      top: rect.bottom + 4,
+      left: rect.left + rect.width / 2
+    };
+  }
+}
+
 function showSubMenu(menuId) {
-  // 清除隐藏定时器
   if (hideTimer) {
     clearTimeout(hideTimer);
     hideTimer = null;
   }
   hoveredMenuId.value = menuId;
+  nextTick(() => updateDropdownPosition(menuId));
 }
 
 function scheduleHideSubMenu(menuId) {
-  // 延迟隐藏，给用户时间移动到下拉框
   hideTimer = setTimeout(() => {
     if (hoveredMenuId.value === menuId) {
       hoveredMenuId.value = null;
@@ -138,7 +152,6 @@ function scheduleHideSubMenu(menuId) {
 }
 
 function cancelHideSubMenu(menuId) {
-  // 鼠标进入下拉框时取消隐藏
   if (hideTimer) {
     clearTimeout(hideTimer);
     hideTimer = null;
@@ -159,7 +172,7 @@ function initSortable() {
     chosenClass: 'sortable-chosen',
     dragClass: 'sortable-drag',
     handle: '.drag-handle',
-    filter: '.add-menu-item, .action-btn, .action-btn-sm, .menu-dropdown',
+    filter: '.add-menu-item, .action-btn, .action-btn-sm',
     preventOnFilter: false,
     onEnd: (evt) => {
       const menuIds = Array.from(container.querySelectorAll('.menu-item:not(.add-menu-item)')).map((el) => {
@@ -171,7 +184,6 @@ function initSortable() {
   });
 }
 
-// 销毁拖拽
 function destroySortable() {
   if (sortableInstance) {
     sortableInstance.destroy();
@@ -179,7 +191,6 @@ function destroySortable() {
   }
 }
 
-// 监听编辑模式变化
 watch(() => props.editMode, (newVal) => {
   if (newVal) {
     nextTick(() => initSortable());
@@ -196,6 +207,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   destroySortable();
+  if (hideTimer) clearTimeout(hideTimer);
 });
 </script>
 
@@ -207,12 +219,11 @@ onUnmounted(() => {
   padding: 0 1rem;
   position: relative;
   gap: 4px;
-  pointer-events: auto; /* 恢复子元素的交互 */
+  pointer-events: auto;
 }
 
 .menu-item {
   position: relative;
-  z-index: 1;
 }
 
 .menu-bar button {
@@ -280,195 +291,6 @@ onUnmounted(() => {
   cursor: grabbing;
 }
 
-/* 编辑模式下拉面板 - 按需渲染 */
-.menu-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  background: #2a2a30;
-  border-radius: 10px;
-  min-width: max-content;
-  white-space: nowrap;
-  z-index: 1000;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  margin-top: 4px;
-  padding: 10px 0;
-  overflow: hidden;
-}
-
-/* 菜单操作行 */
-.menu-actions-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 10px 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  margin-bottom: 4px;
-}
-
-.menu-actions-label {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.menu-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.action-btn {
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.1);
-  font-size: 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-  padding: 0;
-}
-
-.action-btn:hover {
-  transform: scale(1.1);
-}
-
-.action-btn.edit-btn:hover {
-  background: rgba(99, 179, 237, 0.8);
-}
-
-.action-btn.del-btn:hover {
-  background: rgba(245, 101, 101, 0.8);
-}
-
-/* 子菜单列表 */
-.sub-menu-list {
-  padding: 0;
-}
-
-.sub-menu-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 4px;
-}
-
-.sub-menu-item {
-  flex: 1;
-  display: block !important;
-  text-align: left !important;
-  padding: 0.4rem 0.8rem !important;
-  border: none !important;
-  background: transparent !important;
-  color: #fff !important;
-  font-size: 14px !important;
-  font-weight: 400 !important;
-  cursor: pointer !important;
-  transition: all 0.2s ease !important;
-  border-radius: 4px !important;
-  text-shadow: none !important;
-  line-height: 1.5 !important;
-  white-space: nowrap !important;
-}
-
-.sub-menu-item:hover {
-  background: rgba(57, 157, 255, 0.25) !important;
-  color: #399dff !important;
-  transform: none !important;
-}
-
-.sub-menu-item:focus,
-.sub-menu-item:focus-visible {
-  outline: none !important;
-  box-shadow: none !important;
-}
-
-.sub-menu-item.active {
-  background: rgba(57, 157, 255, 0.35) !important;
-  color: #399dff !important;
-  font-weight: 500 !important;
-}
-
-.sub-menu-item::before {
-  display: none;
-}
-
-.sub-menu-actions {
-  display: flex;
-  gap: 2px;
-  padding-right: 4px;
-}
-
-.action-btn-sm {
-  width: 18px;
-  height: 18px;
-  border: none;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.1);
-  font-size: 9px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-  padding: 0;
-}
-
-.action-btn-sm:hover {
-  background: rgba(99, 179, 237, 0.6);
-}
-
-.action-btn-sm.sort-btn {
-  font-size: 10px;
-  font-weight: bold;
-}
-
-.action-btn-sm.sort-btn:hover {
-  background: rgba(74, 222, 128, 0.6);
-}
-
-.add-sub-menu-btn {
-  width: calc(100% - 16px) !important;
-  margin: 4px 8px !important;
-  padding: 0.4rem 0.8rem !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
-  color: rgba(99, 179, 237, 0.8) !important;
-  font-size: 12px !important;
-  border-radius: 4px !important;
-  text-align: center !important;
-}
-
-.add-sub-menu-btn:hover {
-  background: rgba(99, 179, 237, 0.2) !important;
-  color: #399dff !important;
-}
-
-.add-sub-menu-btn::before {
-  display: none;
-}
-
-/* 非编辑模式二级菜单样式 - 按需渲染 */
-.sub-menu {
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  background: #2a2a30;
-  border-radius: 10px;
-  min-width: max-content;
-  white-space: nowrap;
-  z-index: 1000;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  margin-top: 4px;
-  padding: 6px 0;
-  overflow: hidden;
-}
-
 /* 添加菜单按钮 */
 .add-menu-item {
   border: 1px dashed rgba(99, 179, 237, 0.6) !important;
@@ -511,28 +333,6 @@ onUnmounted(() => {
     font-size: 13px;
     padding: .5rem .8rem;
   }
-  
-  .menu-dropdown,
-  .sub-menu {
-    min-width: max-content;
-  }
-  
-  .sub-menu-item {
-    font-size: 12px !important;
-    padding: 0.35rem 0.7rem !important;
-  }
-  
-  .action-btn {
-    width: 22px;
-    height: 22px;
-    font-size: 11px;
-  }
-  
-  .action-btn-sm {
-    width: 18px;
-    height: 18px;
-    font-size: 9px;
-  }
 }
 
 @media (max-width: 480px) {
@@ -544,6 +344,199 @@ onUnmounted(() => {
   .menu-bar button {
     font-size: 12px;
     padding: .4rem .6rem;
+  }
+}
+</style>
+
+<!-- 全局样式用于 Teleport 的下拉菜单 -->
+<style>
+/* 子菜单下拉框 - 渲染到 body */
+.sub-menu-portal,
+.menu-dropdown-portal {
+  background: #2a2a30;
+  border-radius: 10px;
+  min-width: max-content;
+  white-space: nowrap;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 6px 0;
+  transform: translateX(-50%);
+  animation: dropdownFadeIn 0.15s ease;
+}
+
+.menu-dropdown-portal {
+  padding: 10px 0;
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* 菜单操作行 */
+.menu-dropdown-portal .menu-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 4px;
+}
+
+.menu-dropdown-portal .menu-actions-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.menu-dropdown-portal .menu-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.menu-dropdown-portal .action-btn,
+.sub-menu-portal .action-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  padding: 0;
+}
+
+.menu-dropdown-portal .action-btn:hover {
+  transform: scale(1.1);
+}
+
+.menu-dropdown-portal .action-btn.edit-btn:hover {
+  background: rgba(99, 179, 237, 0.8);
+}
+
+.menu-dropdown-portal .action-btn.del-btn:hover {
+  background: rgba(245, 101, 101, 0.8);
+}
+
+/* 子菜单列表 */
+.sub-menu-portal .sub-menu-row,
+.menu-dropdown-portal .sub-menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.sub-menu-portal .sub-menu-item,
+.menu-dropdown-portal .sub-menu-item {
+  flex: 1;
+  display: block;
+  text-align: left;
+  padding: 0.4rem 0.8rem;
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-radius: 4px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.sub-menu-portal .sub-menu-item:hover,
+.menu-dropdown-portal .sub-menu-item:hover {
+  background: rgba(57, 157, 255, 0.25);
+  color: #399dff;
+}
+
+.sub-menu-portal .sub-menu-item:focus,
+.menu-dropdown-portal .sub-menu-item:focus {
+  outline: none;
+}
+
+.sub-menu-portal .sub-menu-item.active,
+.menu-dropdown-portal .sub-menu-item.active {
+  background: rgba(57, 157, 255, 0.35);
+  color: #399dff;
+  font-weight: 500;
+}
+
+.menu-dropdown-portal .sub-menu-actions {
+  display: flex;
+  gap: 2px;
+  padding-right: 4px;
+}
+
+.menu-dropdown-portal .action-btn-sm {
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 9px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  padding: 0;
+}
+
+.menu-dropdown-portal .action-btn-sm:hover {
+  background: rgba(99, 179, 237, 0.6);
+}
+
+.menu-dropdown-portal .action-btn-sm.sort-btn {
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.menu-dropdown-portal .action-btn-sm.sort-btn:hover {
+  background: rgba(74, 222, 128, 0.6);
+}
+
+.menu-dropdown-portal .add-sub-menu-btn {
+  display: block;
+  width: calc(100% - 16px);
+  margin: 4px 8px;
+  padding: 0.4rem 0.8rem;
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: rgba(99, 179, 237, 0.8);
+  font-size: 12px;
+  border-radius: 4px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.menu-dropdown-portal .add-sub-menu-btn:hover {
+  background: rgba(99, 179, 237, 0.2);
+  color: #399dff;
+}
+
+@media (max-width: 768px) {
+  .sub-menu-portal,
+  .menu-dropdown-portal {
+    min-width: max-content;
+  }
+  
+  .sub-menu-portal .sub-menu-item,
+  .menu-dropdown-portal .sub-menu-item {
+    font-size: 12px;
+    padding: 0.35rem 0.7rem;
   }
 }
 </style>
