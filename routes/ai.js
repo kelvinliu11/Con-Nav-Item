@@ -60,9 +60,10 @@ async function generateCardFields(config, card, types, existingTags, strategy = 
         card.desc = parsed.description;
         updated = true;
       }
-      if (parsed.tags && parsed.tags.length > 0) {
-        await db.updateCardTags(card.id, parsed.tags);
-        resultData.tags = parsed.tags;
+      if (parsed.tags && (parsed.tags.tags.length > 0 || parsed.tags.newTags.length > 0)) {
+        const allTags = [...parsed.tags.tags, ...parsed.tags.newTags];
+        await db.updateCardTags(card.id, allTags);
+        resultData.tags = parsed.tags; // 保持 { tags: [], newTags: [] } 格式
         updated = true;
       }
       return { updated, data: resultData };
@@ -108,7 +109,8 @@ async function generateCardFields(config, card, types, existingTags, strategy = 
         const allTags = [...tags, ...newTags];
         if (allTags.length > 0) {
           await db.updateCardTags(card.id, allTags);
-          resultData.tags = allTags;
+          // 返回分离的 tags 和 newTags，而不是合并后的数组
+          resultData.tags = { tags, newTags };
           updated = true;
         }
       }
@@ -546,38 +548,43 @@ function buildUnifiedPrompt(card, types, existingTags) {
   
   // 构建few-shot示例，提高生成准确性
   const examples = [
-    '示例1: github.com → {"name":"GitHub","description":"全球最大的代码托管和协作平台","tags":["开发工具","代码托管"]}',
-    '示例2: baidu.com → {"name":"百度","description":"中国最大的搜索引擎和AI技术平台","tags":["搜索引擎","AI"]}',
-    '示例3: bilibili.com → {"name":"B站","description":"年轻人喜爱的视频弹幕网站","tags":["视频","弹幕"]}'
+    '输入: github.com → 输出: {"name":"GitHub","description":"全球最大的代码托管和协作平台","tags":["开发工具","代码托管"]}',
+    '输入: baidu.com → 输出: {"name":"百度","description":"中国最大的搜索引擎和AI技术平台","tags":["搜索引擎","AI"]}',
+    '输入: bilibili.com → 输出: {"name":"B站","description":"年轻人喜爱的视频弹幕网站","tags":["视频","弹幕"]}',
+    '输入: notion.so → 输出: {"name":"Notion","description":"一体化协作笔记和知识管理工具","tags":["笔记","协作"]}',
+    '输入: vercel.com → 输出: {"name":"Vercel","description":"前端应用部署和托管平台","tags":["部署","前端"]}'
   ];
 
   return [
     {
       role: 'system',
-      content: `你是网站命名和分析专家。根据URL生成简洁的名称和描述。
+      content: `你是网站命名专家。根据URL直接输出JSON。
 
-规则：
-- name: 2-8字中文或2-15字符英文品牌名，优先官方名称，不加"官网/首页"
-- description: 10-25字，突出核心功能
-- tags: 2-4个标签，优先匹配现有标签
+命名规则（最重要）：
+- 优先使用官方品牌名或大众熟知的简称
+- 中文名2-8字，英文/品牌名2-15字符
+- 禁止加"官网"、"首页"、"官方"等后缀
+- 知名网站必须用其品牌名（如GitHub、百度、B站）
+
+描述规则：10-25字，突出核心功能
+标签规则：2-4个，优先匹配现有标签
 
 ${examples.join('\n')}
 
-直接输出JSON，禁止任何解释或思考过程。`
+严格按JSON格式输出，禁止任何解释。`
     },
     {
       role: 'user',
-      content: `${card.url}
-当前名：${card.title || domain}
+      content: `输入: ${card.url}
 现有标签：${tagsStr}
 
-输出JSON：`
+输出:`
     }
   ];
 }
 
 function parseUnifiedResponse(text, types, existingTags) {
-  const result = { name: '', description: '', tags: [] };
+  const result = { name: '', description: '', tags: { tags: [], newTags: [] } };
   if (!text) return result;
 
   try {
@@ -590,7 +597,12 @@ function parseUnifiedResponse(text, types, existingTags) {
       if (types.includes('name') && parsed.name) result.name = cleanName(parsed.name);
       if (types.includes('description') && parsed.description) result.description = cleanDescription(parsed.description);
       if (types.includes('tags') && Array.isArray(parsed.tags)) {
-        result.tags = parsed.tags.filter(t => typeof t === 'string' && t.length > 0 && t.length <= 15);
+        const filteredTags = parsed.tags.filter(t => typeof t === 'string' && t.length > 0 && t.length <= 15);
+        // 分离现有标签和新标签
+        const existingSet = new Set(existingTags.map(t => t.toLowerCase()));
+        const matchedTags = filteredTags.filter(t => existingSet.has(t.toLowerCase()));
+        const newTagsList = filteredTags.filter(t => !existingSet.has(t.toLowerCase()));
+        result.tags = { tags: matchedTags, newTags: newTagsList };
       }
       return result;
     }

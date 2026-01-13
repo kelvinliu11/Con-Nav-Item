@@ -11,28 +11,40 @@ chrome.storage.sync.get(['newtabMode', 'navUrl', 'offlineHtml'], function(result
     // 导航站模式
     const navFrame = document.getElementById('navFrame');
     const setupContainer = document.getElementById('setupContainer');
+    const loadingScreen = document.getElementById('loadingScreen');
     
     if (result.navUrl) {
+        // 显示加载动画
+        loadingScreen.classList.add('show');
+        
         // 已配置导航站地址,尝试加载
         navFrame.src = result.navUrl;
-        navFrame.style.display = 'block';
+        
+        // 监听 iframe 加载完成
+        navFrame.onload = function() {
+            // 延迟一点确保内容渲染完成
+            setTimeout(function() {
+                loadingScreen.classList.remove('show');
+                navFrame.style.display = 'block';
+                // 添加淡入效果
+                setTimeout(function() {
+                    navFrame.classList.add('loaded');
+                }, 50);
+            }, 300);
+        };
         
         // 监听加载错误,如果网络失败则使用离线版本
         navFrame.onerror = function() {
             loadOfflineVersion(result.offlineHtml);
         };
         
-        // 设置超时检测
+        // 设置超时检测（10秒）
         setTimeout(function() {
-            // 检查是否成功加载
-            try {
-                if (!navFrame.contentWindow) {
-                    loadOfflineVersion(result.offlineHtml);
-                }
-            } catch (e) {
-                // 跨域时无法访问 contentWindow,说明在线版本正在加载
+            // 如果还在显示加载动画，说明加载失败
+            if (loadingScreen.classList.contains('show')) {
+                loadOfflineVersion(result.offlineHtml);
             }
-        }, 5000);
+        }, 10000);
         
     } else {
         // 未配置,显示设置页面
@@ -43,10 +55,17 @@ chrome.storage.sync.get(['newtabMode', 'navUrl', 'offlineHtml'], function(result
 // 加载离线版本
 function loadOfflineVersion(offlineHtml) {
     const navFrame = document.getElementById('navFrame');
+    const loadingScreen = document.getElementById('loadingScreen');
+    
+    loadingScreen.classList.remove('show');
+    
     if (offlineHtml) {
         // 使用保存的离线 HTML
         navFrame.srcdoc = offlineHtml;
         navFrame.style.display = 'block';
+        setTimeout(function() {
+            navFrame.classList.add('loaded');
+        }, 50);
     } else {
         // 没有离线版本,显示提示
         document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:white;font-size:18px;">网络连接失败,且未缓存离线版本</div>';
