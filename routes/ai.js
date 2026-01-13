@@ -1213,8 +1213,69 @@ async function autoGenerateForCards(cardIds) {
     for (let i = 0; i < cardIds.length; i++) {
       const cards = await db.getCardsByIds([cardIds[i]]);
       if (!cards?.length) continue;
-      const { updated } = await generateCardFields(config, cards[0], ['name', 'description', 'tags'], existingTags, { mode: 'fill' });
-      if (updated) hasUpdates = true;
+      
+      const card = cards[0];
+      let cardUpdated = false;
+      
+      // 智能策略：根据需要生成的字段数量选择方案
+      const needsName = !card.title || card.title.includes('://') || card.title.startsWith('www.');
+      const needsDesc = !card.desc;
+      
+      // Token优化策略：
+      // - 需要 name + desc + tags (3个): 统一生成 (~350 tokens)
+      // - 需要 name + desc (2个): 统一生成 name+desc，然后单独生成tags (~400 tokens)
+      // - 只需要 name 或 desc (1个): 单字段生成 + tags (~300 tokens)
+      // - 只需要 tags: 单独生成 (~200 tokens)
+      
+      if (needsName && needsDesc) {
+        // 情况1: 需要name和desc，统一生成所有字段（最省token）
+        try {
+          const { updated } = await generateCardFields(config, card, ['name', 'description', 'tags'], existingTags, { mode: 'fill' });
+          if (updated) cardUpdated = true;
+        } catch (e) {
+          console.warn(`Auto-generate failed for card ${card.id}, falling back:`, e.message);
+          // 失败时降级：先生成name+desc，再生成tags
+          try {
+            const { updated: updated1 } = await generateCardFields(config, card, ['name', 'description'], existingTags, { mode: 'fill' });
+            if (updated1) cardUpdated = true;
+            await new Promise(r => setTimeout(r, delay / 2));
+            const { updated: updated2 } = await generateCardFields(config, card, ['tags'], existingTags, { mode: 'fill' });
+            if (updated2) cardUpdated = true;
+          } catch (e2) {
+            console.warn(`Fallback generation also failed for card ${card.id}`);
+          }
+        }
+      } else if (needsName || needsDesc) {
+        // 情况2: 只需要name或desc其中之一，单独生成该字段
+        const fieldType = needsName ? 'name' : 'description';
+        try {
+          const { updated } = await generateCardFields(config, card, [fieldType], existingTags, { mode: 'overwrite' });
+          if (updated) cardUpdated = true;
+          await new Promise(r => setTimeout(r, delay / 2));
+        } catch (e) {
+          console.warn(`Auto-generate ${fieldType} failed for card ${card.id}:`, e.message);
+        }
+        
+        // 然后生成tags
+        try {
+          const { updated } = await generateCardFields(config, card, ['tags'], existingTags, { mode: 'fill' });
+          if (updated) cardUpdated = true;
+        } catch (e) {
+          console.warn(`Auto-generate tags failed for card ${card.id}:`, e.message);
+        }
+      } else {
+        // 情况3: name和desc都有，只生成tags
+        try {
+          const { updated } = await generateCardFields(config, card, ['tags'], existingTags, { mode: 'fill' });
+          if (updated) cardUpdated = true;
+        } catch (e) {
+          console.warn(`Auto-generate tags failed for card ${card.id}:`, e.message);
+        }
+      }
+      
+      if (cardUpdated) hasUpdates = true;
+      
+      // 卡片间延迟
       if (i < cardIds.length - 1) await new Promise(r => setTimeout(r, delay));
     }
     if (hasUpdates) triggerDebouncedBackup();
