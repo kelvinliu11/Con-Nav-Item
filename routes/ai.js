@@ -546,41 +546,38 @@ function buildUnifiedPrompt(card, types, existingTags) {
     ? existingTags.slice(0, 25).join('、')
     : '暂无';
   
-  // 构建few-shot示例，提高生成准确性
-  const examples = [
-    '输入: github.com → 输出: {"name":"GitHub","description":"全球最大的代码托管和协作平台","tags":["开发工具","代码托管"]}',
-    '输入: baidu.com → 输出: {"name":"百度","description":"中国最大的搜索引擎和AI技术平台","tags":["搜索引擎","AI"]}',
-    '输入: bilibili.com → 输出: {"name":"B站","description":"年轻人喜爱的视频弹幕网站","tags":["视频","弹幕"]}',
-    '输入: notion.so → 输出: {"name":"Notion","description":"一体化协作笔记和知识管理工具","tags":["笔记","协作"]}',
-    '输入: vercel.com → 输出: {"name":"Vercel","description":"前端应用部署和托管平台","tags":["部署","前端"]}'
-  ];
+  // 当前名称（用于参考）
+  const currentName = card.title && !card.title.includes('://') && !card.title.startsWith('www.') 
+    ? card.title : '';
 
-  return [
+  // 使用对话历史格式作为few-shot示例（方案A优化）
+  // 这种格式比单行示例更接近单字段生成的精准度
+  const messages = [
     {
       role: 'system',
-      content: `你是网站命名专家。根据URL直接输出JSON。
+      content: `网站命名专家。直接输出JSON，禁止解释。
 
-命名规则（最重要）：
-- 优先使用官方品牌名或大众熟知的简称
-- 中文名2-8字，英文/品牌名2-15字符
-- 禁止加"官网"、"首页"、"官方"等后缀
-- 知名网站必须用其品牌名（如GitHub、百度、B站）
-
-描述规则：10-25字，突出核心功能
-标签规则：2-4个，优先匹配现有标签
-
-${examples.join('\n')}
-
-严格按JSON格式输出，禁止任何解释。`
+命名：官方品牌名/简称，2-8字中文或2-15字符英文，禁止"官网/首页"后缀
+描述：10-25字，核心功能
+标签：2-4个，优先现有标签`
     },
-    {
-      role: 'user',
-      content: `输入: ${card.url}
-现有标签：${tagsStr}
-
-输出:`
+    // Few-shot示例1
+    { role: 'user', content: '网站:github.com 标签:开发工具,代码托管,AI,视频' },
+    { role: 'assistant', content: '{"name":"GitHub","description":"全球最大的代码托管和协作平台","tags":["开发工具","代码托管"]}' },
+    // Few-shot示例2
+    { role: 'user', content: '网站:bilibili.com 标签:视频,弹幕,动漫,游戏' },
+    { role: 'assistant', content: '{"name":"B站","description":"年轻人喜爱的视频弹幕网站","tags":["视频","弹幕"]}' },
+    // Few-shot示例3
+    { role: 'user', content: '网站:notion.so 标签:笔记,协作,效率工具' },
+    { role: 'assistant', content: '{"name":"Notion","description":"一体化协作笔记和知识管理工具","tags":["笔记","协作"]}' },
+    // 实际请求
+    { 
+      role: 'user', 
+      content: `网站:${card.url}${currentName ? ` 当前名:${currentName}` : ''} 标签:${tagsStr}` 
     }
   ];
+
+  return messages;
 }
 
 function parseUnifiedResponse(text, types, existingTags) {
