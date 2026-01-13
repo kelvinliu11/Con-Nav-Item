@@ -31,10 +31,30 @@ async function generateCardFields(config, card, types, existingTags, strategy = 
   // 1. 过滤出真正需要生成的字段
   const neededTypes = types.filter(type => {
     if (type === 'name') {
-      return !(isFillMode && card.title && !card.title.includes('://') && !card.title.startsWith('www.'));
+      // 检查是否为原始/杂乱的名称，或者明显是扩展自动生成的简单名称
+      const domain = extractDomain(card.url);
+      const isDirtyName = !card.title || 
+                          card.title.includes('://') || 
+                          card.title.startsWith('www.') ||
+                          card.title.length > 20 || 
+                          /[\|\-\_·]/.test(card.title) ||
+                          /首页|官网|Home|Official/i.test(card.title) ||
+                          (card.title.toLowerCase() === domain.toLowerCase()) || // 仅为域名
+                          (domain.includes(card.title.toLowerCase()) && card.title.length < 5); // 仅为域名的简写
+      return !(isFillMode && !isDirtyName);
     }
     if (type === 'description') {
-      return !(isFillMode && card.desc);
+      // 检查是否为原始/杂乱的描述，或者仅是标题+域名的简单组合（扩展生成的模式）
+      const domain = extractDomain(card.url);
+      const isExtensionGenerated = card.desc && card.title && 
+                                   (card.desc.includes(card.title) && card.desc.includes(domain));
+      
+      const isDirtyDesc = !card.desc || 
+                          card.desc.length < 10 || 
+                          card.desc.length > 100 ||
+                          /请提供|无法访问|描述如下/i.test(card.desc) ||
+                          isExtensionGenerated;
+      return !(isFillMode && !isDirtyDesc);
     }
     return true; // tags 总是可以补充
   });
@@ -554,31 +574,32 @@ function buildUnifiedPrompt(card, types, existingTags) {
   const messages = [
     {
       role: 'system',
-      content: `你是一个专业的互联网产品分析师和导航站编辑。你的任务是根据网站URL和基本信息，生成高质量的导航卡片元数据。
+      content: `你是一个专业的互联网产品分析师和导航站编辑。
+任务：根据提供的网站信息，生成高质量、精炼的导航卡片元数据。
 
-请严格遵守以下准则：
+## 核心准则
 1. **名称 (name)**:
-   - 对于网站首页：提取品牌核心名称，如 "GitHub"、"Notion"。
-   - 对于文章、文档或具体功能页：采用 "[品牌/项目] [主题]" 模式，如 "Zeabur 部署指南"、"Tailwind CSS 文档"。
-   - 严禁包含 "官网"、"首页"、"登录页" 等冗余词汇。
-   - 长度控制：中文 2-12 字，英文 2-20 字符。
+   - 品牌优先：对于网站首页，只输出品牌核心名称（如 "GitHub"、"Notion"）。
+   - 结构化：对于文章/内容页，采用 "[品牌] [主题]" 模式（如 "Tailwind 文档"、"DeepSeek API 指南"）。
+   - 清洗：严格剔除 "官网"、"首页"、"官方网站"、"Login"、"Welcome" 及 SEO 堆砌词。
+   - 长度：中文 2-10 字，英文 2-20 字符。
 2. **描述 (description)**:
-   - 简洁有力，一句话概括核心功能或具体页面内容。
-   - 首页描述应突出价值导向；具体页面描述应突出 "能学到什么" 或 "能做什么"。
-   - 避免使用 "这是一个..."、"本网站提供..." 等废话。
-   - 长度控制：12-30 个中文字符。
+   - 核心价值：用一句话精准描述 "它是做什么的" 或 "它有什么用"。
+   - 结构：首页描述侧重"核心价值"，子页面侧重"具体内容"。
+   - 精炼：杜绝 "这是一个..."、"旨在提供..."、"本站..." 等冗余前缀。
+   - 长度：严格控制在 12-30 个中文字符。
 3. **标签 (tags)**:
-   - 推荐 2-4 个精准标签。
-   - 优先从 "现有标签列表" 中匹配。
-   - 对于文档/教程页，应包含 "文档" 或 "教程" 标签。
+   - 精准：推荐 2-4 个分类标签。
+   - 继承：优先从 "现有标签列表" 中匹配。
+   - 补全：若现有标签不匹配，可创造 1-2 个精准的新标签。
 
-输出格式：必须且只能输出合法的 JSON 对象。`
+输出格式：必须输出纯 JSON 对象，严禁包含任何思考过程、解释说明或 Markdown 标记。`
     },
-    { role: 'user', content: '网站:github.com 现有标签:开发工具,代码托管,开源,AI,视频' },
+    { role: 'user', content: '网站:https://github.com/ 当前参考名:GitHub: Let\'s build from here · GitHub 现有标签:开发工具,代码托管,开源,AI' },
     { role: 'assistant', content: '{"name":"GitHub","description":"全球领先的代码托管与开源协作开发平台","tags":["开发工具","代码托管"]}' },
-    { role: 'user', content: '网站:https://gb-docs.snaily.top/guide/setup-zeabur.html 现有标签:开发工具,部署,文档,教程' },
-    { role: 'assistant', content: '{"name":"SnailyCAD Zeabur 部署教程","description":"详细介绍如何在 Zeabur 平台上快速部署和配置 SnailyCAD 实例。","tags":["部署","教程","文档"]}' },
-    { role: 'user', content: `网站:${card.url}${currentName ? ` 当前参考名:${currentName}` : ''}${isSubPage ? ' (注：这是一个具体的内容/文档页)' : ''} 现有标签:${tagsStr}` }
+    { role: 'user', content: '网站:https://v.qq.com/ 当前参考名:腾讯视频-中国领先的在线视频媒体平台 现有标签:影视,视频,娱乐' },
+    { role: 'assistant', content: '{"name":"腾讯视频","description":"中国领先的在线视频平台，提供海量正版影视内容","tags":["影视","视频"]}' },
+    { role: 'user', content: `网站:${card.url}${currentName ? ` 当前参考名:${currentName}` : ''}${card.desc ? ` 当前参考描述:${card.desc}` : ''}${isSubPage ? ' (注：这是一个具体的内容页面)' : ''} 现有标签:${tagsStr}` }
   ];
 
   return messages;
@@ -595,16 +616,16 @@ function buildNamePrompt(card) {
       role: 'system',
       content: `你是一个精炼的网站命名专家。
 规则：
-1. 对于网站首页，只输出品牌核心名称（如 "百度"）。
-2. 对于具体文章、文档页，输出 "[项目名] [页面主题]"（如 "SnailyCAD 部署指南"）。
-3. 剔除 "官网"、"首页"、"官方网站" 等后缀。
-4. 中文 2-12 字，英文 2-20 字符。${commonRules}`
+1. 品牌优先：对于网站首页，只输出品牌核心名称（如 "GitHub"、"Notion"）。
+2. 结构化：对于文章/文档页，采用 "[品牌] [主题]" 模式（如 "Tailwind 文档"）。
+3. 清洗：严格剔除 "官网"、"首页"、"官方网站"、"Login"、"Welcome" 及 SEO 堆砌词。
+4. 长度：中文 2-10 字，英文 2-20 字符。${commonRules}`
     },
     {
       role: 'user',
       content: `网站地址：${card.url}
 当前抓取名：${card.title || '无'}
-${isSubPage ? '页面类型：文档/文章页' : '页面类型：网站首页'}
+${isSubPage ? '页面类型：内容/文章页' : '页面类型：网站首页'}
 输出名称：`
     }
   ];
@@ -621,16 +642,17 @@ function buildDescriptionPrompt(card) {
       role: 'system',
       content: `你是一个资深的导航站文案编辑。
 规则：
-1. 用一句话精准描述网站的核心功能和价值。
-2. 杜绝 "这是一个"、"旨在提供" 等前缀。
-3. 首页描述侧重"是什么"，文档/文章页侧重"讲了什么"或"有什么用"。
-4. 字数严格控制在 12-30 个中文字符。${commonRules}`
+1. 核心价值：用一句话精准描述网站的核心功能和价值。
+2. 精炼：杜绝 "这是一个"、"本网站提供"、"致力于" 等无意义前缀。
+3. 首页描述侧重"是什么"，内容页侧重"讲了什么"或"有什么用"。
+4. 长度：严格控制在 12-30 个中文字符。${commonRules}`
     },
     {
       role: 'user',
       content: `网站名称：${card.title || domain}
 网站地址：${card.url}
-${isSubPage ? '页面类型：文档/文章页' : '页面类型：网站首页'}
+${card.desc ? `参考描述：${card.desc}` : ''}
+${isSubPage ? '页面类型：内容/文章页' : '页面类型：网站首页'}
 输出描述：`
     }
   ];
@@ -1213,8 +1235,19 @@ async function autoGenerateForCards(cardIds) {
       let cardUpdated = false;
       
       // 智能策略：根据需要生成的字段数量选择方案
-      const needsName = !card.title || card.title.includes('://') || card.title.startsWith('www.');
-      const needsDesc = !card.desc;
+      const domain = extractDomain(card.url);
+      const isDirtyName = !card.title || 
+                          card.title.includes('://') || 
+                          card.title.startsWith('www.') ||
+                          card.title.length > 20 || 
+                          (card.title.toLowerCase() === domain.toLowerCase());
+      
+      const isDirtyDesc = !card.desc || 
+                          card.desc.length < 10 || 
+                          (card.desc.includes(card.title) && card.desc.includes(domain));
+
+      const needsName = isDirtyName;
+      const needsDesc = isDirtyDesc;
       
       // Token优化策略：
       // - 需要 name + desc + tags (3个): 统一生成 (~350 tokens)
