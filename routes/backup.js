@@ -1394,15 +1394,23 @@ router.post('/webdav/restore', authMiddleware, async (req, res) => {
       preRestoreFiles.push('config/.jwt-secret');
     }
     
-    // 备份当前WebDAV配置
-    const webdavConfigPath = path.join(projectRoot, 'config', '.webdav-config.json');
-    if (fs.existsSync(webdavConfigPath)) {
-      const backupWebdavPath = path.join(preRestoreBackupDir, `.webdav-config.json.pre-restore-${timestamp}`);
-      fs.copyFileSync(webdavConfigPath, backupWebdavPath);
-      preRestoreFiles.push('config/.webdav-config.json');
-    }
-    
-    // 保存到临时文件
+      // 备份当前WebDAV配置（与crypto-secret一起备份，确保可回滚）
+      const webdavConfigPath = path.join(projectRoot, 'config', '.webdav-config.json');
+      if (fs.existsSync(webdavConfigPath)) {
+        const backupWebdavPath = path.join(preRestoreBackupDir, `.webdav-config.json.pre-restore-${timestamp}`);
+        fs.copyFileSync(webdavConfigPath, backupWebdavPath);
+        preRestoreFiles.push('config/.webdav-config.json');
+      }
+      
+      // 备份当前加密密钥（与WebDAV配置必须匹配）
+      const cryptoSecretPath = path.join(projectRoot, 'config', '.crypto-secret');
+      if (fs.existsSync(cryptoSecretPath)) {
+        const backupCryptoPath = path.join(preRestoreBackupDir, `.crypto-secret.pre-restore-${timestamp}`);
+        fs.copyFileSync(cryptoSecretPath, backupCryptoPath);
+        preRestoreFiles.push('config/.crypto-secret');
+      }
+      
+      // 保存到临时文件
     const tempPath = path.join(__dirname, '..', `temp-webdav-${Date.now()}.zip`);
     fs.writeFileSync(tempPath, fileBuffer);
     
@@ -1483,28 +1491,25 @@ router.post('/webdav/restore', authMiddleware, async (req, res) => {
           if (!fs.existsSync(destPath)) {
             fs.mkdirSync(destPath, { recursive: true });
           }
-          const configFiles = fs.readdirSync(sourcePath);
-          for (const configFile of configFiles) {
-            // 保护JWT密钥
-            if (configFile === '.jwt-secret') {
-              skippedFiles.push('config/.jwt-secret (保护当前JWT密钥)');
-              continue;
+            const configFiles = fs.readdirSync(sourcePath);
+            for (const configFile of configFiles) {
+              // 保护JWT密钥
+              if (configFile === '.jwt-secret') {
+                skippedFiles.push('config/.jwt-secret (保护当前JWT密钥)');
+                continue;
+              }
+              // .crypto-secret 和 .webdav-config.json 必须一起恢复
+              // 因为 WebDAV 密码是用 crypto-secret 加密的，两者必须匹配
+              const srcFile = path.join(sourcePath, configFile);
+              const destFile = path.join(destPath, configFile);
+              if (fs.statSync(srcFile).isDirectory()) {
+                fs.cpSync(srcFile, destFile, { recursive: true });
+              } else {
+                fs.copyFileSync(srcFile, destFile);
+              }
+              restoredFiles.push(`config/${configFile}`);
             }
-            // 保护WebDAV配置
-            if (configFile === '.webdav-config.json') {
-              skippedFiles.push('config/.webdav-config.json (保护当前WebDAV配置)');
-              continue;
-            }
-            const srcFile = path.join(sourcePath, configFile);
-            const destFile = path.join(destPath, configFile);
-            if (fs.statSync(srcFile).isDirectory()) {
-              fs.cpSync(srcFile, destFile, { recursive: true });
-            } else {
-              fs.copyFileSync(srcFile, destFile);
-            }
-            restoredFiles.push(`config/${configFile}`);
-          }
-          continue;
+            continue;
         }
         
         if (fs.existsSync(destPath)) {

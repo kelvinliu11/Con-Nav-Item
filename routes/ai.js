@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AI 功能路由
  * 提供 AI 配置管理、批量生成任务等功能
  * 支持自适应并发处理策略
@@ -542,6 +542,8 @@ function validateAIConfig(config) {
 
 function buildUnifiedPrompt(card, types, existingTags) {
   const domain = extractDomain(card.url);
+  const isSubPage = card.url.includes('/guide/') || card.url.includes('/docs/') || card.url.includes('/blog/') || card.url.includes('/p/') || card.url.split('/').length > 4;
+  
   const tagsStr = existingTags.length > 0 
     ? existingTags.slice(0, 30).join('、')
     : '暂无';
@@ -556,25 +558,27 @@ function buildUnifiedPrompt(card, types, existingTags) {
 
 请严格遵守以下准则：
 1. **名称 (name)**:
-   - 提取品牌核心名称，如 "GitHub"、"哔哩哔哩"、"Notion"。
-   - 严禁包含 "官网"、"首页"、"登录页"、"Official Website" 等冗余词汇。
-   - 长度控制：中文 2-8 字，英文/品牌名 2-15 字符。
+   - 对于网站首页：提取品牌核心名称，如 "GitHub"、"Notion"。
+   - 对于文章、文档或具体功能页：采用 "[品牌/项目] [主题]" 模式，如 "Zeabur 部署指南"、"Tailwind CSS 文档"。
+   - 严禁包含 "官网"、"首页"、"登录页" 等冗余词汇。
+   - 长度控制：中文 2-12 字，英文 2-20 字符。
 2. **描述 (description)**:
-   - 简洁有力，一句话概括核心功能或独特价值，如 "全球领先的代码托管与协作开发平台"。
+   - 简洁有力，一句话概括核心功能或具体页面内容。
+   - 首页描述应突出价值导向；具体页面描述应突出 "能学到什么" 或 "能做什么"。
    - 避免使用 "这是一个..."、"本网站提供..." 等废话。
-   - 长度控制：12-28 个中文字符，确保语义完整且逻辑清晰。
+   - 长度控制：12-30 个中文字符。
 3. **标签 (tags)**:
    - 推荐 2-4 个精准标签。
-   - 优先从提供的 "现有标签列表" 中选择完全匹配的标签。
-   - 仅在现有标签无法准确覆盖时，才生成 1-2 个新的专业标签（每个 2-4 字）。
+   - 优先从 "现有标签列表" 中匹配。
+   - 对于文档/教程页，应包含 "文档" 或 "教程" 标签。
 
 输出格式：必须且只能输出合法的 JSON 对象。`
     },
     { role: 'user', content: '网站:github.com 现有标签:开发工具,代码托管,开源,AI,视频' },
     { role: 'assistant', content: '{"name":"GitHub","description":"全球领先的代码托管与开源协作开发平台","tags":["开发工具","代码托管"]}' },
-    { role: 'user', content: '网站:bilibili.com 现有标签:视频,弹幕,社区,动漫,游戏' },
-    { role: 'assistant', content: '{"name":"哔哩哔哩","description":"国内领先的年轻人文化社区与视频弹幕网站","tags":["视频","社区"]}' },
-    { role: 'user', content: `网站:${card.url}${currentName ? ` 当前参考名:${currentName}` : ''} 现有标签:${tagsStr}` }
+    { role: 'user', content: '网站:https://gb-docs.snaily.top/guide/setup-zeabur.html 现有标签:开发工具,部署,文档,教程' },
+    { role: 'assistant', content: '{"name":"SnailyCAD Zeabur 部署教程","description":"详细介绍如何在 Zeabur 平台上快速部署和配置 SnailyCAD 实例。","tags":["部署","教程","文档"]}' },
+    { role: 'user', content: `网站:${card.url}${currentName ? ` 当前参考名:${currentName}` : ''}${isSubPage ? ' (注：这是一个具体的内容/文档页)' : ''} 现有标签:${tagsStr}` }
   ];
 
   return messages;
@@ -582,6 +586,8 @@ function buildUnifiedPrompt(card, types, existingTags) {
 
 function buildNamePrompt(card) {
   const domain = extractDomain(card.url);
+  const isSubPage = card.url.includes('/guide/') || card.url.includes('/docs/') || card.url.includes('/blog/') || card.url.includes('/p/') || card.url.split('/').length > 4;
+  
   const commonRules = '\n注意：严禁输出任何思考过程或解释，直接输出结果。';
   
   return [
@@ -589,15 +595,16 @@ function buildNamePrompt(card) {
       role: 'system',
       content: `你是一个精炼的网站命名专家。
 规则：
-1. 只输出品牌核心名称，如 "百度" 而不是 "百度一下，你就知道"。
-2. 剔除 "官网"、"首页"、"官方网站" 等后缀。
-3. 中文 2-8 字，英文 2-15 字符。
-4. 优先考虑大众熟知的品牌简称。${commonRules}`
+1. 对于网站首页，只输出品牌核心名称（如 "百度"）。
+2. 对于具体文章、文档页，输出 "[项目名] [页面主题]"（如 "SnailyCAD 部署指南"）。
+3. 剔除 "官网"、"首页"、"官方网站" 等后缀。
+4. 中文 2-12 字，英文 2-20 字符。${commonRules}`
     },
     {
       role: 'user',
       content: `网站地址：${card.url}
 当前抓取名：${card.title || '无'}
+${isSubPage ? '页面类型：文档/文章页' : '页面类型：网站首页'}
 输出名称：`
     }
   ];
@@ -605,6 +612,8 @@ function buildNamePrompt(card) {
 
 function buildDescriptionPrompt(card) {
   const domain = extractDomain(card.url);
+  const isSubPage = card.url.includes('/guide/') || card.url.includes('/docs/') || card.url.includes('/blog/') || card.url.includes('/p/') || card.url.split('/').length > 4;
+  
   const commonRules = '\n注意：严禁输出任何思考过程或解释，直接输出描述文本。';
   
   return [
@@ -613,14 +622,15 @@ function buildDescriptionPrompt(card) {
       content: `你是一个资深的导航站文案编辑。
 规则：
 1. 用一句话精准描述网站的核心功能和价值。
-2. 杜绝 "这是一个"、"旨在提供" 等前缀，直击重点。
-3. 字数严格控制在 12-28 个汉字之间。
-4. 语言要专业、体面，符合中文阅读习惯。${commonRules}`
+2. 杜绝 "这是一个"、"旨在提供" 等前缀。
+3. 首页描述侧重"是什么"，文档/文章页侧重"讲了什么"或"有什么用"。
+4. 字数严格控制在 12-30 个中文字符。${commonRules}`
     },
     {
       role: 'user',
       content: `网站名称：${card.title || domain}
 网站地址：${card.url}
+${isSubPage ? '页面类型：文档/文章页' : '页面类型：网站首页'}
 输出描述：`
     }
   ];
@@ -641,8 +651,8 @@ function buildTagsPrompt(card, existingTags) {
 任务：为网站分配 2-4 个最合适的分类标签。
 准则：
 1. 优先从下方的 "现有标签" 列表中选择。
-2. 如果现有标签不足以准确分类，可补充 1-2 个新标签（每个 2-4 字）。
-3. 确保标签具有通用性和检索价值。
+2. 如果是文档或教程页，必须包含 "文档" 或 "教程" 标签。
+3. 如果现有标签不足，可补充 1-2 个新标签（每个 2-4 字）。
 
 输出格式：{"tags":["选中的现有标签"],"newTags":["建议的新标签"]}${commonRules}`
     },
@@ -696,94 +706,6 @@ function parseUnifiedResponse(text, types, existingTags) {
   return result;
 }
 
-function buildNamePrompt(card) {
-  const domain = extractDomain(card.url);
-  
-  const commonRules = '\n注意：严禁输出任何思考过程、内心独白或“我无法访问”等反馈，直接输出结果。';
-  
-  return [
-    {
-      role: 'system',
-      content: `你是网站命名专家。为导航站卡片生成简洁名称。
-
-规则：
-- 直接输出名称，无前缀/引号/标点
-- 中文 2-8 字，英文/品牌名 2-15 字符
-- 优先使用官方品牌名或简称
-- 知名网站用大众熟知的名称
-- 不加"官网"、"首页"等后缀${commonRules}`
-    },
-    {
-      role: 'user',
-      content: `网站：${domain}
-地址：${card.url}
-当前名：${card.title || '无'}
-
-示例：github.com→GitHub, baidu.com→百度, bilibili.com→B站
-
-输出名称：`
-    }
-  ];
-}
-
-function buildDescriptionPrompt(card) {
-  const domain = extractDomain(card.url);
-  
-  const commonRules = '\n注意：严禁输出任何思考过程、内心独白或“我无法访问”等反馈，直接输出描述。';
-  
-  return [
-    {
-      role: 'system',
-      content: `你是网站分析专家。为导航站生成简洁描述。
-
-规则：
-- 直接输出描述，无前缀/引号
-- 10-25 个中文字符
-- 突出核心功能或独特价值${commonRules}`
-    },
-    {
-      role: 'user',
-      content: `网站：${card.title || domain}
-地址：${card.url}
-
-示例：GitHub→全球最大的代码托管和协作平台
-
-输出描述：`
-    }
-  ];
-}
-
-function buildTagsPrompt(card, existingTags) {
-  const domain = extractDomain(card.url);
-  const tagsStr = existingTags.length > 0 
-    ? existingTags.slice(0, 25).join('、')
-    : '暂无';
-  
-  const commonRules = '\n注意：严禁输出任何思考过程、内心独白或“我无法访问”等反馈，严格按 JSON 格式输出结果。';
-  
-  return [
-    {
-      role: 'system',
-      content: `你是网站分类专家。推荐 2-4 个标签。
-
-规则：
-1. 优先用现有标签（完全匹配）
-2. 必要时才建议新标签（2-4字）
-3. 严格按 JSON 格式输出
-
-格式：{"tags":["现有标签"],"newTags":["新标签"]}${commonRules}`
-    },
-    {
-      role: 'user',
-      content: `网站：${card.title || domain}
-描述：${card.desc || '无'}
-现有标签：${tagsStr}
-
-输出JSON：`
-    }
-  ];
-}
-
 // ==================== 响应清理函数 ====================
 
 // AI 思考过程的特征模式（需要过滤掉）
@@ -800,7 +722,7 @@ const AI_THINKING_PATTERNS = [
 function isAIThinkingText(text) {
   if (!text || text.length < 5) return false;
   
-  // 移除常见的标签和代码块标记再检查
+  // 移除常见的标签 and 代码块标记再检查
   const clean = text.replace(/<[^>]+>/g, '').trim();
   
   return AI_THINKING_PATTERNS.some(pattern => pattern.test(clean));
@@ -836,7 +758,7 @@ function cleanName(text) {
       return processed.length <= 4 ? match : '';
     })
     .trim()
-    .substring(0, 20);
+    .substring(0, 20); // 控制在合理范围
 }
 
 function cleanDescription(text) {
@@ -859,7 +781,7 @@ function cleanDescription(text) {
     .trim()
     .replace(/[。.]+$/, '');
   
-  return cleaned.length > 80 ? cleaned.substring(0, 80) + '...' : cleaned;
+  return cleaned.length > 100 ? cleaned.substring(0, 100) + '...' : cleaned;
 }
 
 function parseTagsResponse(text, existingTags) {
