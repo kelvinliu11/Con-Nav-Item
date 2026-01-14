@@ -502,7 +502,8 @@ function extractDomain(url) {
 }
 
 /**
- * 检查名称是否为“脏数据”（低质量数据）
+ * 检查名称是否为"脏数据"（低质量数据，需要 AI 优化）
+ * 核心原则：宁可多优化，也不遗漏——AI 的价值在于智能提炼，不是简单清洗
  */
 function checkIsDirtyName(title, url) {
   if (!title) return true;
@@ -510,45 +511,79 @@ function checkIsDirtyName(title, url) {
   const lowerTitle = title.toLowerCase();
   const lowerDomain = domain.toLowerCase();
 
-  // 1. 基础垃圾特征
+  // 1. 基础垃圾特征（必须优化）
   const hasGarbage = (
     title.includes('://') || 
     title.startsWith('www.') ||
-    title.length > 30 || // 过长的标题通常包含大量 SEO 堆砌
-    /[\|\-\_·]{2,}/.test(title) // 包含多个分隔符
+    /[\|\-\_·–—]{1,}/.test(title) // 包含任何分隔符（通常是 SEO 拼接）
   );
 
   // 2. 纯功能性词汇（无品牌信息）
   const isPureFunctional = /^(首页|官网|Home|Official|Login|Signin|Sign in|Welcome|欢迎光临|未命名|新建卡片|Dashboard|Console)$/i.test(title.trim());
 
-  // 3. 包含明显的待清洗词汇
-  const needsCleaning = /首页|官网|Home|Official|Login|Signin|Sign in|Welcome|欢迎光临/i.test(title) && title.length < 15;
+  // 3. 包含需要清洗的词汇
+  const needsCleaning = /首页|官网|官方网站|Home|Official|Login|Signin|Sign in|Welcome|欢迎|Documentation|Docs/i.test(title);
+
+  // 4. 标题过长（超过15字通常包含冗余信息，需要 AI 提炼精简）
+  const isTooLong = title.length > 15;
+
+  // 5. 看起来像完整的 HTML title（通常包含品牌名 + 页面描述的组合）
+  const looksLikeHtmlTitle = (
+    /[·\|:\-–—]/.test(title) || // 包含常见的 title 分隔符
+    title.includes(' - ') ||
+    title.includes(' | ') ||
+    title.includes(' · ')
+  );
+
+  // 6. 纯域名或域名简写
+  const isDomainOnly = (
+    (lowerTitle === lowerDomain) ||
+    (lowerDomain.includes(lowerTitle) && title.length < 4)
+  );
 
   return (
     hasGarbage || 
     isPureFunctional ||
     needsCleaning ||
-    (lowerTitle === lowerDomain) || // 仅为域名
-    (lowerDomain.includes(lowerTitle) && title.length < 4) // 仅为极短的域名简写
+    isTooLong ||
+    looksLikeHtmlTitle ||
+    isDomainOnly
   );
 }
 
 /**
- * 检查描述是否为"脏数据"
+ * 检查描述是否为"脏数据"（需要 AI 优化）
+ * 核心原则：导航站描述应该精炼、有价值，而非网页原始 meta description
  */
 function checkIsDirtyDesc(desc, title, url) {
   if (!desc) return true;
   const domain = extractDomain(url);
   
+  // 1. 扩展生成的低质量描述
   const isExtensionGenerated = title && (desc.includes(title) && desc.includes(domain));
-  const isSEOSpam = (desc.match(/,|，|\|/g) || []).length > 5;
+  
+  // 2. SEO 关键词堆砌
+  const isSEOSpam = (desc.match(/,|，|\|/g) || []).length > 3;
+  
+  // 3. 无意义的描述模式
+  const isGenericDesc = /请提供|无法访问|描述如下|网站介绍|站点简介|本页面|该网站|点击访问|欢迎访问|欢迎来到|最新|最好|最全|一站式/i.test(desc);
+  
+  // 4. 过短（信息量不足）或过长（需要精炼）
+  const isBadLength = desc.length < 15 || desc.length > 80;
+  
+  // 5. 看起来像原始 meta description（通常包含品牌名重复、网址、或营销语言）
+  const looksLikeMeta = (
+    desc.includes(domain) ||
+    desc.includes('http') ||
+    /官方|官网|正版|权威|领先|专业的|优质的|最大的/i.test(desc)
+  );
 
   return (
-    desc.length < 12 || 
-    desc.length > 150 ||
-    /请提供|无法访问|描述如下|网站介绍|站点简介|本页面|该网站|点击访问/i.test(desc) ||
     isExtensionGenerated ||
-    isSEOSpam
+    isSEOSpam ||
+    isGenericDesc ||
+    isBadLength ||
+    looksLikeMeta
   );
 }
 
@@ -956,7 +991,7 @@ function buildUnifiedPrompt(card, types, existingTags) {
 - **工具页**：采用 "[品牌] [工具名]" 模式（如 "JSON 格式化工具"）
 - **登录/功能页**：使用核心产品名称，忽略 "登录"、"注册" 等功能词
 - **清洗规则**：严格剔除 "官网"、"首页"、"官方网站"、"Login"、"Welcome"、"Sign in"、"-"、"|" 分隔符后的冗余内容
-- **长度限制**：中文 2-10 字，英文 2-20 字符
+- **长度限制**：建议中文 2-15 字，中英混合 2-40 字符
 
 ### 2. 描述 (description) 生成规则
 - **品牌首页**：一句话说明 "它是什么" + "核心价值"（如 "全球领先的代码托管平台"）
@@ -1057,8 +1092,8 @@ function buildNamePrompt(card) {
 - 去除 SEO 堆砌词汇和重复的品牌名
 
 ## 长度限制
-- 中文：2-10 字
-- 英文：2-20 字符${commonRules}`
+- 中文：2-15 字
+- 中英混合：2-40 字符${commonRules}`
     },
     // Few-shot 示例
     { role: 'user', content: '网站地址：https://github.com/\n当前抓取名：GitHub: Let\'s build from here · GitHub\n页面类型：代码托管\n品牌：GitHub\n输出名称：' },
@@ -1327,30 +1362,31 @@ function cleanName(text) {
       return processed.length <= 4 ? match : '';
     })
     .trim()
-    .substring(0, 20); // 控制在合理范围
-}
-
-function cleanDescription(text) {
-  if (!text) return '';
-  
-  let processed = stripThoughtTags(text);
-  
-  // 检测是否为 AI 思考过程文本
-  if (isAIThinkingText(processed)) {
-    console.warn('Detected AI thinking text in description, rejecting:', processed.substring(0, 50));
-    return '';
+      .substring(0, 40); // 控制在合理范围
   }
   
-  let cleaned = processed
-    .replace(/```[\s\S]*?```/g, '')
-    .replace(/^["'「」『』""'']+|["'「」『』""'']+$/g, '')
-    .replace(/^(描述[：:]\s*|简介[：:]\s*|网站描述[：:]\s*|Description[：:]\s*)/i, '')
-    .replace(/[\r\n]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/[。.]+$/, '');
-  
-  return cleaned.length > 100 ? cleaned.substring(0, 100) + '...' : cleaned;
+  function cleanDescription(text) {
+    if (!text) return '';
+    
+    let processed = stripThoughtTags(text);
+    
+    // 检测是否为 AI 思考过程文本
+    if (isAIThinkingText(processed)) {
+      console.warn('Detected AI thinking text in description, rejecting:', processed.substring(0, 50));
+      return '';
+    }
+    
+    let cleaned = processed
+      .replace(/```[\s\S]*?```/g, '')
+      .replace(/^["'「」『』""'']+|["'「」『』""'']+$/g, '')
+      .replace(/^(描述[：:]\s*|简介[：:]\s*|网站描述[：:]\s*|Description[：:]\s*)/i, '')
+      .replace(/[\r\n]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/[。.]+$/, '');
+    
+    return cleaned.length > 200 ? cleaned.substring(0, 200) + '...' : cleaned;
+
 }
 
 function parseTagsResponse(text, existingTags) {
