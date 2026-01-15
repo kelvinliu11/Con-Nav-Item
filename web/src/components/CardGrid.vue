@@ -1,26 +1,69 @@
-﻿<template>
-  <div ref="cardGridRef" class="container card-grid" :class="{ 'edit-mode': editMode }">
+<template>
+  <div ref="cardGridRef" class="container card-grid">
     <div v-for="(card, index) in cards" :key="card.id"
          class="link-item" 
-         :class="{ 'draggable': editMode }"
+         :class="{ 
+           'selected': isCardSelected(card),
+           'dragging': isDragging
+         }"
          :data-card-id="card.id"
-         :style="getCardStyle(index)">
-      <a :href="editMode ? 'javascript:void(0)' : card.url" :target="editMode ? '' : '_blank'" :title="getTooltip(card)" @click="editMode ? $event.preventDefault() : null" :class="{'drag-handle': editMode}">
+         :style="getCardStyle(index)"
+         @contextmenu.prevent="handleContextMenu($event, card)"
+         @mousedown="handleMouseDown($event, card)"
+         @touchstart="handleTouchStart($event, card)"
+         @click="handleCardClick($event, card)">
+      <a :href="isDragging ? 'javascript:void(0)' : card.url" 
+         :target="isDragging ? '' : '_blank'" 
+         :title="getTooltip(card)" 
+         @click="handleLinkClick($event)"
+         class="card-link">
         <img class="link-icon" :src="getLogo(card)" alt="" @error="onImgError($event, card)" loading="lazy">
         <span class="link-text">{{ truncate(card.title) }}</span>
       </a>
-      <div v-if="editMode" class="card-btns">
-        <input 
-          type="checkbox" 
-          class="card-checkbox"
-          :checked="isCardSelected(card)"
-          @click="$emit('toggleCardSelection', card)"
-          title="选中"
-        />
-        <button @click="$emit('editCard', card)" class="card-btn edit-btn" title="编辑">✏️</button>
-        <button @click="$emit('deleteCard', card)" class="card-btn del-btn" title="删除">🗑️</button>
-      </div>
+      <div v-if="isCardSelected(card)" class="card-selected-badge">✓</div>
     </div>
+    
+    <!-- 右键菜单 -->
+    <Teleport to="body">
+      <div v-if="contextMenuVisible" 
+           class="context-menu"
+           :style="{ left: contextMenuX + 'px', top: contextMenuY + 'px' }"
+           @click.stop>
+        <div class="context-menu-item" @click="onContextEdit">
+          <span class="context-menu-icon">✏️</span>
+          <span>编辑</span>
+        </div>
+        <div class="context-menu-item" @click="onContextDelete">
+          <span class="context-menu-icon">🗑️</span>
+          <span>删除</span>
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item" @click="onContextSelect">
+          <span class="context-menu-icon">☑️</span>
+          <span>{{ isCardSelected(contextMenuCard) ? '取消选中' : '选中' }}</span>
+        </div>
+        <div class="context-menu-item" @click="onContextMove">
+          <span class="context-menu-icon">📁</span>
+          <span>移动到...</span>
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item" @click="onContextOpen">
+          <span class="context-menu-icon">🔗</span>
+          <span>在新标签页打开</span>
+        </div>
+        <div class="context-menu-item" @click="onContextCopyUrl">
+          <span class="context-menu-icon">📋</span>
+          <span>复制链接</span>
+        </div>
+      </div>
+    </Teleport>
+    
+    <!-- 长按提示 -->
+    <Teleport to="body">
+      <div v-if="showDragHint" class="drag-hint">
+        松开开始拖拽排序
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -30,52 +73,234 @@ import Sortable from 'sortablejs';
 
 const props = defineProps({ 
   cards: Array,
-  editMode: Boolean,
   selectedCards: Array,
   categoryId: Number,
   subCategoryId: [Number, null]
 });
 
-const emit = defineEmits(['cardsReordered', 'editCard', 'deleteCard', 'toggleCardSelection']);
+const emit = defineEmits([
+  'cardsReordered', 
+  'contextEdit', 
+  'contextDelete',
+  'toggleCardSelection',
+  'openMovePanel'
+]);
 
-// 容器引用
 const cardGridRef = ref(null);
 let sortableInstance = null;
 
-// 动画已完全禁用
+const contextMenuVisible = ref(false);
+const contextMenuX = ref(0);
+const contextMenuY = ref(0);
+const contextMenuCard = ref(null);
 
-// 初始化拖拽功能
-function initSortable() {
-  if (!props.editMode || sortableInstance) return;
+const isDragging = ref(false);
+const showDragHint = ref(false);
+let longPressTimer = null;
+let longPressCard = null;
+const LONG_PRESS_DURATION = 500;
+
+function handleContextMenu(event, card) {
+  contextMenuCard.value = card;
+  contextMenuX.value = event.clientX;
+  contextMenuY.value = event.clientY;
+  contextMenuVisible.value = true;
+}
+
+function closeContextMenu() {
+  contextMenuVisible.value = false;
+  contextMenuCard.value = null;
+}
+
+function onContextEdit() {
+  if (contextMenuCard.value) {
+    emit('contextEdit', contextMenuCard.value);
+  }
+  closeContextMenu();
+}
+
+function onContextDelete() {
+  if (contextMenuCard.value) {
+    emit('contextDelete', contextMenuCard.value);
+  }
+  closeContextMenu();
+}
+
+function onContextSelect() {
+  if (contextMenuCard.value) {
+    emit('toggleCardSelection', contextMenuCard.value);
+  }
+  closeContextMenu();
+}
+
+function onContextMove() {
+  if (contextMenuCard.value) {
+    if (!isCardSelected(contextMenuCard.value)) {
+      emit('toggleCardSelection', contextMenuCard.value);
+    }
+    emit('openMovePanel');
+  }
+  closeContextMenu();
+}
+
+function onContextOpen() {
+  if (contextMenuCard.value) {
+    window.open(contextMenuCard.value.url, '_blank');
+  }
+  closeContextMenu();
+}
+
+function onContextCopyUrl() {
+  if (contextMenuCard.value) {
+    navigator.clipboard.writeText(contextMenuCard.value.url);
+  }
+  closeContextMenu();
+}
+
+function handleClickOutside(event) {
+  if (contextMenuVisible.value) {
+    closeContextMenu();
+  }
+}
+
+function handleCardClick(event, card) {
+  if (event.ctrlKey || event.metaKey) {
+    event.preventDefault();
+    event.stopPropagation();
+    emit('toggleCardSelection', card);
+  }
+}
+
+function handleLinkClick(event) {
+  if (isDragging.value || event.ctrlKey || event.metaKey) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+}
+
+function handleMouseDown(event, card) {
+  if (event.button !== 0) return;
+  if (event.ctrlKey || event.metaKey) return;
   
-  // 使用组件自己的 ref，而不是全局选择器
+  longPressCard = card;
+  const startX = event.clientX;
+  const startY = event.clientY;
+  
+  longPressTimer = setTimeout(() => {
+    showDragHint.value = true;
+    enableDragMode();
+  }, LONG_PRESS_DURATION);
+  
+  const handleMouseMove = (e) => {
+    const dx = Math.abs(e.clientX - startX);
+    const dy = Math.abs(e.clientY - startY);
+    if (dx > 5 || dy > 5) {
+      clearLongPress();
+    }
+  };
+  
+  const handleMouseUp = () => {
+    clearLongPress();
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', handleMouseUp);
+  };
+  
+  document.addEventListener('mousemove', handleMouseMove);
+  document.addEventListener('mouseup', handleMouseUp);
+}
+
+function handleTouchStart(event, card) {
+  longPressCard = card;
+  const touch = event.touches[0];
+  const startX = touch.clientX;
+  const startY = touch.clientY;
+  
+  longPressTimer = setTimeout(() => {
+    showDragHint.value = true;
+    enableDragMode();
+  }, LONG_PRESS_DURATION);
+  
+  const handleTouchMove = (e) => {
+    const t = e.touches[0];
+    const dx = Math.abs(t.clientX - startX);
+    const dy = Math.abs(t.clientY - startY);
+    if (dx > 10 || dy > 10) {
+      clearLongPress();
+    }
+  };
+  
+  const handleTouchEnd = () => {
+    clearLongPress();
+    document.removeEventListener('touchmove', handleTouchMove);
+    document.removeEventListener('touchend', handleTouchEnd);
+  };
+  
+  document.addEventListener('touchmove', handleTouchMove, { passive: true });
+  document.addEventListener('touchend', handleTouchEnd);
+}
+
+function clearLongPress() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+  showDragHint.value = false;
+}
+
+function enableDragMode() {
+  isDragging.value = true;
+  showDragHint.value = false;
+  initSortable();
+  
+  setTimeout(() => {
+    if (!sortableInstance) return;
+    const container = cardGridRef.value;
+    if (!container || !longPressCard) return;
+    
+    const cardEl = container.querySelector(`[data-card-id="${longPressCard.id}"]`);
+    if (cardEl) {
+      cardEl.classList.add('sortable-chosen');
+    }
+  }, 50);
+}
+
+function disableDragMode() {
+  isDragging.value = false;
+  destroySortable();
+}
+
+function initSortable() {
+  if (sortableInstance) return;
+  
   const container = cardGridRef.value;
   if (!container) return;
   
   sortableInstance = new Sortable(container, {
     animation: 150,
-    group: 'cards', // 设置组名，允许跨分类拖动
+    group: 'cards',
     ghostClass: 'sortable-ghost',
     chosenClass: 'sortable-chosen',
     dragClass: 'sortable-drag',
-    handle: '.drag-handle', // 改为特定的拖拽手柄
-    filter: '.card-btn, .card-checkbox', // 过滤掉按钮和复选框
-    preventOnFilter: false, // 允许过滤元素的默认事件
+    delay: 0,
+    delayOnTouchOnly: false,
+    onStart: () => {
+      isDragging.value = true;
+    },
     onEnd: (evt) => {
-      // 拖拽结束后，通知父组件更新顺序
       const targetContainer = evt.to;
-      // 只需要传递卡片ID列表，父组件会处理完整数据
       const cardIds = Array.from(targetContainer.children).map((el) => {
         return parseInt(el.getAttribute('data-card-id'));
       }).filter(id => !isNaN(id));
       
-      // 传递卡片ID列表和目标分类ID
       emit('cardsReordered', cardIds, props.categoryId, props.subCategoryId);
+      
+      setTimeout(() => {
+        disableDragMode();
+      }, 100);
     }
   });
 }
 
-// 销毁拖拽功能
 function destroySortable() {
   if (sortableInstance) {
     sortableInstance.destroy();
@@ -83,37 +308,24 @@ function destroySortable() {
   }
 }
 
-// 监听编辑模式变化
-watch(() => props.editMode, (newVal) => {
-  if (newVal) {
-    nextTick(() => initSortable());
-  } else {
-    destroySortable();
-  }
-});
-
 onMounted(() => {
-  if (props.editMode) {
-    nextTick(() => initSortable());
-  }
+  document.addEventListener('click', handleClickOutside);
+  document.addEventListener('scroll', closeContextMenu);
 });
 
 onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside);
+  document.removeEventListener('scroll', closeContextMenu);
   destroySortable();
+  clearLongPress();
 });
 
-// 监听 cards 变化，触发动画并重新初始化 Sortable
 watch(() => props.cards, (newCards, oldCards) => {
-  // 如果是新的卡片数据或者从有数据变成其他数据
   if (newCards && newCards.length > 0) {
-    // 如果是首次加载或者数据发生了变化
     const isDataChanged = !oldCards || oldCards.length === 0 || JSON.stringify(newCards) !== JSON.stringify(oldCards);
     if (isDataChanged) {
-      // 延迟一下确保DOM更新完成
       nextTick(() => {
-        triggerAnimation();
-        // 在编辑模式下，重新初始化 Sortable（因为 DOM 可能已重新渲染）
-        if (props.editMode) {
+        if (isDragging.value) {
           destroySortable();
           nextTick(() => initSortable());
         }
@@ -122,17 +334,10 @@ watch(() => props.cards, (newCards, oldCards) => {
   }
 }, { deep: true, immediate: false });
 
-// 完全禁用所有动画
-function triggerAnimation() {
-  // 无动画，立即显示
-}
-
-// 获取卡片样式（纯毛玻璃，无渐变色）
 function getCardStyle(index) {
   return {};
 }
 
-//获取完整的origin URL
 function getOriginUrl(url) {
   try {
     const urlObj = new URL(url);
@@ -143,28 +348,24 @@ function getOriginUrl(url) {
 }
 
 function getLogo(card) {
-  // 1. 优先使用数据库中的 logo_url
   if (card.logo_url) {
     return card.logo_url;
   }
   
-  // 2. 如果没有 logo_url，使用 CDN 自动生成
   const originUrl = getOriginUrl(card.url);
   if (originUrl) {
     return `https://api.xinac.net/icon/?url=${originUrl}&sz=128`;
   }
   
-  // 3. 默认图标
   return '/default-favicon.png';
 }
 
-// CDN 备用源列表（用于降级）
 const CDN_PROVIDERS = [
-  (url) => `https://api.xinac.net/icon/?url=${url}&sz=128`,           // CDN 1: xinac (国内)
-  (url) => `https://api.afmax.cn/so/ico/index.php?r=${url}&sz=128`,  // CDN 2: afmax (国内)
-  (url) => `https://icon.horse/icon/${url}`,                          // CDN 3: icon.horse
-  (url) => `https://www.google.com/s2/favicons?domain=${url}&sz=128`, // CDN 4: Google
-  (url) => `https://favicon.im/${url}?larger=true`,                   // CDN 5: favicon.im
+  (url) => `https://api.xinac.net/icon/?url=${url}&sz=128`,
+  (url) => `https://api.afmax.cn/so/ico/index.php?r=${url}&sz=128`,
+  (url) => `https://icon.horse/icon/${url}`,
+  (url) => `https://www.google.com/s2/favicons?domain=${url}&sz=128`,
+  (url) => `https://favicon.im/${url}?larger=true`,
 ];
 
 function onImgError(e, card) {
@@ -176,32 +377,24 @@ function onImgError(e, card) {
     return;
   }
   
-  // 记录已尝试的 CDN 索引
   if (e.target._cdnIndex === undefined) e.target._cdnIndex = 0;
   
-  // 降级策略：CDN1 → CDN2 → CDN3 → CDN4 → CDN5 → 默认
-  
-  // 尝试下一个 CDN
   for (let i = 0; i < CDN_PROVIDERS.length; i++) {
     const cdnUrl = CDN_PROVIDERS[i](originUrl);
-    // 检查是否当前是这个 CDN
     if (currentSrc.includes('api.xinac.net') && i === 0 ||
         currentSrc.includes('api.afmax.cn') && i === 1 ||
         currentSrc.includes('icon.horse') && i === 2 ||
         currentSrc.includes('www.google.com/s2/favicons') && i === 3 ||
         currentSrc.includes('favicon.im') && i === 4) {
-      // 当前 CDN 失败，尝试下一个
       if (i + 1 < CDN_PROVIDERS.length) {
         e.target._cdnIndex = i + 1;
         e.target.src = CDN_PROVIDERS[i + 1](originUrl);
         return;
       }
-      // 所有 CDN 都失败，使用默认图标
       break;
     }
   }
   
-  // 最后降级到默认图标
   e.target.src = '/default-favicon.png';
 }
 
@@ -220,14 +413,12 @@ function truncate(str) {
   return str.length > 20 ? str.slice(0, 20) + '...' : str;
 }
 
-// 检查卡片是否被选中
 function isCardSelected(card) {
   return props.selectedCards?.some(c => c.id === card.id) || false;
 }
 </script>
 
 <style scoped>
-/* ========== 网格布局 ========== */
 .container {
   max-width: 68rem;
   margin: 0 auto;
@@ -262,7 +453,6 @@ function isCardSelected(card) {
   }
 }
 
-/* ========== 卡片主体 - 磨砂玻璃风格 ========== */
 .link-item {
   background: rgba(255, 255, 255, 0.15);
   backdrop-filter: blur(12px);
@@ -276,34 +466,13 @@ function isCardSelected(card) {
   align-items: center;
   position: relative;
   overflow: hidden;
-  /* 精致的边框 */
   border: 1px solid rgba(255, 255, 255, 0.2);
-  /* 柔和的阴影 */
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-  /* 平滑过渡 */
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
+  user-select: none;
 }
 
-/* 顶部高光条 - 已移除，避免白色横条视觉问题 */
-/*
-.link-item::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 15%;
-  right: 15%;
-  height: 1px;
-  background: linear-gradient(90deg, 
-    transparent, 
-    rgba(255, 255, 255, 0.5), 
-    transparent
-  );
-  border-radius: 1px;
-}
-*/
-
-/* 悬停效果 */
 .link-item:hover {
   background: rgba(255, 255, 255, 0.25);
   transform: translateY(-6px) scale(1.02);
@@ -311,14 +480,25 @@ function isCardSelected(card) {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
 }
 
-/* 点击效果 */
 .link-item:active {
   transform: translateY(-4px) scale(0.98);
   transition: transform 0.1s ease;
 }
 
-/* ========== 链接样式 ========== */
-.link-item a {
+.link-item.selected {
+  border: 2px solid rgba(99, 179, 237, 0.8);
+  box-shadow: 0 0 0 3px rgba(99, 179, 237, 0.3), 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.link-item.dragging {
+  cursor: grab;
+}
+
+.link-item.dragging:active {
+  cursor: grabbing;
+}
+
+.card-link {
   text-decoration: none;
   color: #ffffff;
   display: flex;
@@ -333,7 +513,6 @@ function isCardSelected(card) {
   z-index: 1;
 }
 
-/* ========== 图标样式 ========== */
 .link-icon {
   width: 32px;
   height: 32px;
@@ -347,7 +526,6 @@ function isCardSelected(card) {
   transform: scale(1.15);
 }
 
-/* ========== 文字样式 ========== */
 .link-text {
   font-size: 12px;
   font-weight: 500;
@@ -365,39 +543,30 @@ function isCardSelected(card) {
   letter-spacing: 0.02em;
 }
 
-/* ========== 编辑模式 ========== */
-.edit-mode .link-item a.drag-handle {
-  pointer-events: none;
+.card-selected-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  background: rgba(99, 179, 237, 0.9);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 12px;
+  font-weight: bold;
+  z-index: 10;
 }
 
-.edit-mode .link-item .link-icon,
-.edit-mode .link-item .link-text {
-  pointer-events: auto;
-}
-
-.edit-mode .link-item.draggable {
-  cursor: grab;
-}
-
-.edit-mode .link-item.draggable:active {
-  cursor: grabbing;
-}
-
-.edit-mode .link-item {
-  border: 1.5px dashed transparent;
-}
-
-.edit-mode .link-item:hover {
-  border-color: rgba(99, 179, 237, 0.6);
-}
-
-/* ========== 拖拽状态 ========== */
 .sortable-ghost {
   opacity: 0.4;
 }
 
 .sortable-chosen {
   box-shadow: 0 0 0 2px rgba(99, 179, 237, 0.6);
+  transform: scale(1.05);
 }
 
 .sortable-drag {
@@ -405,63 +574,72 @@ function isCardSelected(card) {
   transform: rotate(1deg) scale(1.02);
 }
 
-/* ========== 编辑按钮 ========== */
-.card-btns {
-  position: absolute;
-  top: 4px;
-  right: 4px;
+.context-menu {
+  position: fixed;
+  background: rgba(30, 30, 30, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  padding: 6px 0;
+  min-width: 160px;
+  z-index: 9999;
+  animation: contextMenuFadeIn 0.15s ease;
+}
+
+@keyframes contextMenuFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.context-menu-item {
   display: flex;
-  gap: 3px;
   align-items: center;
-  z-index: 10;
-  pointer-events: auto;
-}
-
-.edit-mode .card-btns {
-  pointer-events: auto !important;
-  z-index: 100 !important;
-}
-
-.card-checkbox {
-  width: 16px;
-  height: 16px;
+  padding: 10px 16px;
   cursor: pointer;
-  accent-color: #63b3ed;
-  pointer-events: auto;
-}
-
-.card-btn {
-  width: 18px;
-  height: 18px;
-  border: none;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
   color: #fff;
-  font-size: 10px;
-  cursor: pointer;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: auto;
-  transition: background 0.2s ease, transform 0.15s ease;
+  font-size: 14px;
+  transition: background 0.15s ease;
 }
 
-.card-btn:hover {
-  transform: scale(1.1);
+.context-menu-item:hover {
+  background: rgba(99, 179, 237, 0.3);
 }
 
-.edit-btn:hover {
-  background: rgba(99, 179, 237, 0.85);
+.context-menu-icon {
+  margin-right: 10px;
+  font-size: 14px;
 }
 
-.del-btn:hover {
-  background: rgba(245, 101, 101, 0.85);
+.context-menu-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 4px 0;
 }
 
-.edit-mode .card-btn,
-.edit-mode .card-checkbox {
-  pointer-events: auto !important;
+.drag-hint {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  z-index: 9999;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 </style>

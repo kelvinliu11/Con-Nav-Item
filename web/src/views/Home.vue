@@ -5,13 +5,12 @@
         :menus="menus" 
         :activeId="activeMenu?.id" 
         :activeSubMenuId="activeSubMenu?.id"
-        :editMode="editMode"
         @select="selectMenu"
-        @addMenu="openAddMenuModal"
-        @editMenu="openEditMenuModal"
+        @addMenu="handleAddMenu"
+        @editMenu="handleEditMenu"
         @deleteMenu="handleDeleteMenu"
-        @addSubMenu="openAddSubMenuModal"
-        @editSubMenu="openEditSubMenuModal"
+        @addSubMenu="handleAddSubMenu"
+        @editSubMenu="handleEditSubMenu"
         @deleteSubMenu="handleDeleteSubMenu"
         @menusReordered="handleMenusReordered"
         @moveSubMenuUp="handleMoveSubMenuUp"
@@ -173,8 +172,36 @@
     </div>
     
     
-    <!-- 编辑模式目标分类选择面板 -->
-    <div v-if="editMode && showMovePanel" class="move-target-panel">
+    <!-- 批量选择悬浮工具栏 -->
+    <transition name="selection-toolbar">
+      <div v-if="selectedCards.length > 0" class="selection-toolbar">
+        <div class="selection-info">
+          <span class="selection-count">已选 {{ selectedCards.length }} 项</span>
+          <button @click="clearSelection" class="clear-selection-btn" title="取消选择">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="selection-actions">
+          <button @click="openMovePanel" class="toolbar-btn move-btn" title="移动到...">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <span>移动</span>
+          </button>
+          <button @click="batchDeleteSelected" class="toolbar-btn delete-btn" title="批量删除">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            <span>删除</span>
+          </button>
+        </div>
+      </div>
+    </transition>
+    
+    <!-- 移动目标分类选择面板 -->
+    <div v-if="showMovePanel" class="move-target-panel">
       <div class="move-target-header">
         <h4>移动到 ({{ selectedCards.length }})</h4>
         <button @click="cancelMove" class="cancel-move-btn">×</button>
@@ -212,17 +239,17 @@
             <span class="group-count">{{ group.cards.length }}</span>
           </div>
           <CardGrid
-            :cards="applyFilters(group.cards)" 
-            :editMode="editMode"
-            :selectedCards="selectedCards"
-            :categoryId="activeMenu?.id"
-            :subCategoryId="group.subMenuId"
-            @cardsReordered="handleCardsReordered"
-            @editCard="handleEditCard"
-            @deleteCard="handleDeleteCard"
-            @toggleCardSelection="toggleCardSelection"
-            @click.stop
-          />
+              :cards="applyFilters(group.cards)" 
+              :selectedCards="selectedCards"
+              :categoryId="activeMenu?.id"
+              :subCategoryId="group.subMenuId"
+              @cardsReordered="handleCardsReordered"
+              @contextEdit="handleContextEdit"
+              @contextDelete="handleContextDelete"
+              @toggleCardSelection="handleToggleCardSelection"
+              @openMovePanel="openMovePanel"
+              @click.stop
+            />
         </div>
       </template>
     </div>
@@ -230,14 +257,14 @@
     <CardGrid
       v-else
       :cards="filteredCards" 
-      :editMode="editMode"
       :selectedCards="selectedCards"
       :categoryId="activeMenu?.id"
       :subCategoryId="activeSubMenu?.id"
       @cardsReordered="handleCardsReordered"
-      @editCard="handleEditCard"
-      @deleteCard="handleDeleteCard"
-      @toggleCardSelection="toggleCardSelection"
+      @contextEdit="handleContextEdit"
+      @contextDelete="handleContextDelete"
+      @toggleCardSelection="handleToggleCardSelection"
+      @openMovePanel="openMovePanel"
       @click.stop
     />
     
@@ -285,38 +312,6 @@
         <button v-if="activeMenu" v-show="showFabMenu" @click="openBatchAddModal" class="batch-add-btn" title="批量添加网站">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 5v14M5 12h14"/>
-          </svg>
-        </button>
-      </transition>
-      
-      
-      <!-- 退出编辑模式按钮 -->
-      <transition name="fab-item">
-        <button 
-          v-if="editMode" 
-          v-show="showFabMenu" 
-          @click="exitEditMode" 
-          class="exit-edit-btn" 
-          title="退出编辑模式"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M18 6L6 18M6 6l12 12"></path>
-          </svg>
-        </button>
-      </transition>
-      
-      <!-- 进入编辑模式按钮 -->
-      <transition name="fab-item">
-        <button 
-          v-if="!editMode" 
-          v-show="showFabMenu" 
-          @click="enterEditMode" 
-          class="edit-mode-btn" 
-          title="编辑模式"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
           </svg>
         </button>
       </transition>
@@ -501,12 +496,12 @@
       </div>
     </footer>
 
-    <!-- 编辑模式密码验证弹窗 -->
-    <div v-if="showEditPasswordModal" class="modal-overlay" @click="showEditPasswordModal = false">
+    <!-- 权限验证弹窗 -->
+    <div v-if="showPasswordModal" class="modal-overlay" @click="closePasswordModal">
       <div class="modal-content" @click.stop>
         <div class="modal-header">
-          <h3>进入编辑模式</h3>
-          <button @click="showEditPasswordModal = false" class="close-btn">
+          <h3>验证密码</h3>
+          <button @click="closePasswordModal" class="close-btn">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M18 6L6 18M6 6l12 12"></path>
             </svg>
@@ -515,24 +510,24 @@
         <div class="modal-body">
           <p style="margin-bottom: 15px;">请输入管理员密码以继续：</p>
           <input 
-            v-model="editPassword" 
+            v-model="authPassword" 
             type="password" 
             placeholder="请输入管理员密码"
             class="batch-input"
-            @keyup.enter="verifyEditPassword"
+            @keyup.enter="verifyAuthPassword"
             style="width: 100%;"
           />
           <div class="remember-password-wrapper">
             <label>
-              <input type="checkbox" v-model="rememberEditPassword" />
+              <input type="checkbox" v-model="rememberAuthPassword" />
               <span>记住密码（30天）</span>
             </label>
           </div>
-          <p v-if="editError" class="batch-error">{{ editError }}</p>
+          <p v-if="authError" class="batch-error">{{ authError }}</p>
           <div class="batch-actions" style="margin-top: 20px;">
-            <button @click="showEditPasswordModal = false" class="btn btn-cancel">取消</button>
-            <button @click="verifyEditPassword" class="btn btn-primary" :disabled="editLoading">
-              {{ editLoading ? '验证中...' : '确认' }}
+            <button @click="closePasswordModal" class="btn btn-cancel">取消</button>
+            <button @click="verifyAuthPassword" class="btn btn-primary" :disabled="authLoading">
+              {{ authLoading ? '验证中...' : '确认' }}
             </button>
           </div>
         </div>
@@ -922,13 +917,13 @@ const batchError = ref('');
 const parsedCards = ref([]);
 const rememberPassword = ref(false);
 
-// 编辑模式相关状态
-const editMode = ref(false);
-const editPassword = ref('');
-const showEditPasswordModal = ref(false);
-const editLoading = ref(false);
-const editError = ref('');
-const rememberEditPassword = ref(false);
+// 权限验证相关状态（统一的密码验证系统）
+const showPasswordModal = ref(false);
+const authPassword = ref('');
+const authLoading = ref(false);
+const authError = ref('');
+const rememberAuthPassword = ref(false);
+const pendingAction = ref(null); // 待执行的操作回调
 
 // AI 生成相关状态
 const aiGenerating = ref(false);
@@ -2721,82 +2716,85 @@ async function autoGenerateAIForNewCards(cardIds) {
   }
 }
 
-// ========== 编辑模式相关函数 ==========
+// ========== 权限验证系统 ==========
 
-// 处理token无效错误，弹出密码验证弹窗
-function handleTokenInvalid() {
-  localStorage.removeItem('token');
-  localStorage.removeItem('nav_password_token');
-  editMode.value = false;
-  // 弹出密码验证弹窗让用户重新验证
-  showEditPasswordModal.value = true;
-  editPassword.value = '';
-  editError.value = 'Token已失效，请重新输入管理密码';
-}
-
-// 进入编辑模式
-async function enterEditMode() {
-  // 刷新 AI 配置状态
-  checkAIConfig();
-  
-  // 检查是否有保存的密码token
+// 检查是否有有效的token
+function hasValidToken() {
   const savedData = localStorage.getItem('nav_password_token');
   if (savedData) {
     try {
-      const { password, expiry, token } = JSON.parse(savedData);
+      const { token, expiry } = JSON.parse(savedData);
       if (Date.now() < expiry && token) {
-        // token未过期，恢复token并直接进入编辑模式
         localStorage.setItem('token', token);
-        editMode.value = true;
-        return;
-      } else {
-        // 已过期，清除
-        localStorage.removeItem('nav_password_token');
+        return true;
       }
+      localStorage.removeItem('nav_password_token');
     } catch (e) {
       localStorage.removeItem('nav_password_token');
     }
   }
+  return !!localStorage.getItem('token');
+}
+
+// 处理token无效错误
+function handleTokenInvalid() {
+  localStorage.removeItem('token');
+  localStorage.removeItem('nav_password_token');
+  authError.value = 'Token已失效，请重新输入管理密码';
+}
+
+// 需要验证权限后执行操作
+function requireAuth(action) {
+  if (hasValidToken()) {
+    action();
+    return;
+  }
   
-  // 没有有效token，显示密码验证弹窗
-  showEditPasswordModal.value = true;
-  editPassword.value = '';
-  editError.value = '';
+  pendingAction.value = action;
+  showPasswordModal.value = true;
+  authPassword.value = '';
+  authError.value = '';
   
-  // 检查是否有保存的密码并自动填充
+  const savedData = localStorage.getItem('nav_password_token');
   if (savedData) {
     try {
       const { password, expiry } = JSON.parse(savedData);
       if (Date.now() < expiry) {
-        editPassword.value = password;
-        rememberEditPassword.value = true;
+        authPassword.value = password;
+        rememberAuthPassword.value = true;
       }
     } catch (e) {
-      // 忽略错误
+      // ignore
     }
   }
 }
 
-// 验证密码并进入编辑模式
-async function verifyEditPassword() {
-  if (!editPassword.value) {
-    editError.value = '请输入密码';
+// 关闭密码验证弹窗
+function closePasswordModal() {
+  showPasswordModal.value = false;
+  authPassword.value = '';
+  authError.value = '';
+  pendingAction.value = null;
+}
+
+// 验证密码
+async function verifyAuthPassword() {
+  if (!authPassword.value) {
+    authError.value = '请输入密码';
     return;
   }
   
-  editLoading.value = true;
-  editError.value = '';
+  authLoading.value = true;
+  authError.value = '';
   
   try {
-    // 仅使用密码验证，不需要用户名
-    const res = await verifyPassword(editPassword.value);
+    const res = await verifyPassword(authPassword.value);
     localStorage.setItem('token', res.data.token);
     
-      // 如果选择了记住密码，保存到30天
-      if (rememberEditPassword.value) {
-        const expiry = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30天
+    if (rememberAuthPassword.value) {
+      const expiry = Date.now() + 30 * 24 * 60 * 60 * 1000;
       localStorage.setItem('nav_password_token', JSON.stringify({
-        password: editPassword.value,
+        password: authPassword.value,
         token: res.data.token,
         expiry
       }));
@@ -2804,38 +2802,108 @@ async function verifyEditPassword() {
       localStorage.removeItem('nav_password_token');
     }
     
-    // 进入编辑模式
-    editMode.value = true;
-    showEditPasswordModal.value = false;
-    editLoading.value = false;
+    showPasswordModal.value = false;
+    authLoading.value = false;
+    
+    if (pendingAction.value) {
+      const action = pendingAction.value;
+      pendingAction.value = null;
+      action();
+    }
   } catch (error) {
-    editError.value = '密码错误';
-    editLoading.value = false;
+    authError.value = '密码错误';
+    authLoading.value = false;
   }
 }
 
-// 退出编辑模式
-async function exitEditMode() {
-  editMode.value = false;
-  selectedCards.value = [];
-  showMovePanel.value = false;
-  targetMenuId.value = null;
-  targetSubMenuId.value = null;
-  
-  // 退出编辑模式时始终清除缓存并强制刷新，确保显示最新数据
-  needForceRefresh.value = false;
-  clearAllCardsCache();
-  await loadCards(true);
+// 右键编辑处理
+function handleContextEdit(card) {
+  requireAuth(() => handleEditCard(card));
 }
 
-// ========== 菜单管理相关函数 ==========
+// 右键删除处理
+function handleContextDelete(card) {
+  requireAuth(() => handleDeleteCard(card));
+}
+
+// 批量选择操作
+function handleToggleCardSelection(card) {
+  requireAuth(() => toggleCardSelection(card));
+}
+
+// 打开移动面板
+function openMovePanel() {
+  requireAuth(() => {
+    showMovePanel.value = true;
+    targetMenuId.value = activeMenu.value?.id || null;
+    targetSubMenuId.value = activeSubMenu.value?.id || null;
+  });
+}
+
+// 批量删除选中的卡片
+async function batchDeleteSelected() {
+  if (selectedCards.value.length === 0) return;
+  
+  const count = selectedCards.value.length;
+  if (!confirm(`确定要删除选中的 ${count} 个卡片吗？`)) return;
+  
+  requireAuth(async () => {
+    showProgress('批量删除', `正在删除 ${count} 个卡片...`);
+    
+    try {
+      let successCount = 0;
+      for (const card of selectedCards.value) {
+        try {
+          await deleteCard(card.id);
+          successCount++;
+        } catch (e) {
+          if (e.response?.status === 401) {
+            closeProgressModal();
+            handleTokenInvalid();
+            return;
+          }
+        }
+      }
+      
+      clearAllCardsCache();
+      await loadCards(true);
+      selectedCards.value = [];
+      updateProgress(`成功删除 ${successCount} 个卡片`, 'success');
+    } catch (error) {
+      updateProgress('删除失败：' + (error.message || '未知错误'), 'error');
+    }
+  });
+}
+
+// 清除选择
+function clearSelection() {
+  selectedCards.value = [];
+  showMovePanel.value = false;
+}
+
+// ========== 菜单管理（带权限验证）==========
 const showMenuModal = ref(false);
-const menuModalMode = ref('add'); // 'add' | 'edit'
-const menuModalType = ref('menu'); // 'menu' | 'subMenu'
+const menuModalMode = ref('add');
+const menuModalType = ref('menu');
 const editingMenuData = ref({ id: null, name: '', parentId: null });
 const menuModalLoading = ref(false);
 
-// 打开添加菜单弹窗
+function handleAddMenu() {
+  requireAuth(() => openAddMenuModal());
+}
+
+function handleEditMenu(menu) {
+  requireAuth(() => openEditMenuModal(menu));
+}
+
+function handleAddSubMenu(parentMenu) {
+  requireAuth(() => openAddSubMenuModal(parentMenu));
+}
+
+function handleEditSubMenu(subMenu, parentMenu) {
+  requireAuth(() => openEditSubMenuModal(subMenu, parentMenu));
+}
+
 function openAddMenuModal() {
   menuModalMode.value = 'add';
   menuModalType.value = 'menu';
@@ -2843,7 +2911,6 @@ function openAddMenuModal() {
   showMenuModal.value = true;
 }
 
-// 打开编辑菜单弹窗
 function openEditMenuModal(menu) {
   menuModalMode.value = 'edit';
   menuModalType.value = 'menu';
@@ -2851,7 +2918,6 @@ function openEditMenuModal(menu) {
   showMenuModal.value = true;
 }
 
-// 打开添加子菜单弹窗
 function openAddSubMenuModal(parentMenu) {
   menuModalMode.value = 'add';
   menuModalType.value = 'subMenu';
@@ -2859,7 +2925,6 @@ function openAddSubMenuModal(parentMenu) {
   showMenuModal.value = true;
 }
 
-// 打开编辑子菜单弹窗
 function openEditSubMenuModal(subMenu, parentMenu) {
   menuModalMode.value = 'edit';
   menuModalType.value = 'subMenu';
@@ -3038,14 +3103,10 @@ async function handleMoveSubMenuDown(subMenu, parentMenu, index) {
   }
 }
 
-// 处理容器点击事件，点击空白退出编辑模式
+// 处理容器点击事件
 function handleContainerClick(event) {
-  // 只在编辑模式下生效
-  if (!editMode.value) return;
-  
-  // 如果点击的是容器本身（空白区域），则退出编辑模式
-  if (event.target.classList.contains('home-container')) {
-    exitEditMode();
+  if (event.target.classList.contains('home-container') && selectedCards.value.length > 0) {
+    clearSelection();
   }
 }
 
@@ -3062,21 +3123,12 @@ function cancelMove() {
 function toggleCardSelection(card) {
   const index = selectedCards.value.findIndex(c => c.id === card.id);
   if (index > -1) {
-    // 取消选中
     selectedCards.value.splice(index, 1);
-    // 如果没有选中的卡片了，关闭面板
     if (selectedCards.value.length === 0) {
       showMovePanel.value = false;
     }
   } else {
-    // 选中
     selectedCards.value.push(card);
-    // 自动打开移动面板
-    if (!showMovePanel.value) {
-      showMovePanel.value = true;
-      targetMenuId.value = activeMenu.value?.id || null;
-      targetSubMenuId.value = activeSubMenu.value?.id || null;
-    }
   }
 }
 
@@ -3241,48 +3293,38 @@ async function moveCardToCategory(menuId, subMenuId) {
 
 // 卡片重新排序处理（拖拽完成后自动保存）
 async function handleCardsReordered(cardIds, targetMenuId, targetSubMenuId) {
-  // 自动保存，包含分类信息
-  const updates = cardIds.map((cardId, index) => ({
-    id: cardId,
-    order: index,
-    menu_id: targetMenuId,
-    sub_menu_id: targetSubMenuId
-  }));
-  
-  try {
-    await batchUpdateCards(updates);
-    // 静默保存，不弹出提示
+  requireAuth(async () => {
+    const updates = cardIds.map((cardId, index) => ({
+      id: cardId,
+      order: index,
+      menu_id: targetMenuId,
+      sub_menu_id: targetSubMenuId
+    }));
     
-    // 本地更新卡片顺序，避免重新加载导致的闪烁
-    const reorderedCards = cardIds.map(id => {
-      return cards.value.find(c => c.id === id) || allCards.value.find(c => c.id === id);
-    }).filter(Boolean);
-    
-    // 更新当前显示的卡片列表
-    if (reorderedCards.length > 0) {
-      cards.value = reorderedCards;
-    }
-    
-    // 后台静默更新缓存（不影响当前显示）
-    setTimeout(() => {
-      if (editMode.value) {
-        loadAllCards();
+    try {
+      await batchUpdateCards(updates);
+      
+      const reorderedCards = cardIds.map(id => {
+        return cards.value.find(c => c.id === id) || allCards.value.find(c => c.id === id);
+      }).filter(Boolean);
+      
+      if (reorderedCards.length > 0) {
+        cards.value = reorderedCards;
       }
-    }, 500);
-    
-  } catch (error) {
-    if (error.response?.status === 401) {
-      handleTokenInvalid();
-    } else {
-      alert('保存失败：' + (error.response?.data?.error || error.message));
-      // 保存失败时重新加载，恢复原始顺序
-      if (editMode.value) {
-        await loadAllCards();
+      
+      setTimeout(() => {
+        loadAllCards();
+      }, 500);
+      
+    } catch (error) {
+      if (error.response?.status === 401) {
+        handleTokenInvalid();
       } else {
+        alert('保存失败：' + (error.response?.data?.error || error.message));
         await loadCards();
       }
     }
-  }
+  });
 }
 
 // 删除卡片
@@ -3298,16 +3340,13 @@ async function handleDeleteCard(card) {
   try {
     const res = await deleteCard(card.id);
     
-    // 更新数据版本号
     if (res.data.dataVersion) {
       saveDataVersion(res.data.dataVersion);
     }
     
-    // 清除缓存并刷新
     clearAllCardsCache();
     await loadCards(true);
     
-    // 从选中列表中移除
     const selectedIndex = selectedCards.value.findIndex(c => c.id === card.id);
     if (selectedIndex > -1) {
       selectedCards.value.splice(selectedIndex, 1);
@@ -3365,8 +3404,6 @@ function closeEditCardModal() {
     desc: '',
     tagIds: []
   };
-  editError.value = '';
-  // 重置标签搜索和快速创建状态
   tagSearchQuery.value = '';
   showQuickAddTag.value = false;
   quickTagName.value = '';
@@ -6081,6 +6118,125 @@ async function saveCardEdit() {
   
   .card-group-header {
     margin-bottom: 0.8rem;
+  }
+}
+
+/* ========== 批量选择悬浮工具栏 ========== */
+.selection-toolbar {
+  position: fixed;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(30, 30, 30, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  z-index: 1000;
+}
+
+.selection-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.selection-count {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.clear-selection-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 6px;
+  padding: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.7);
+  transition: all 0.2s ease;
+}
+
+.clear-selection-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toolbar-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.toolbar-btn span {
+  font-weight: 500;
+}
+
+.move-btn {
+  background: rgba(99, 179, 237, 0.9);
+  color: #fff;
+}
+
+.move-btn:hover {
+  background: rgba(99, 179, 237, 1);
+  transform: translateY(-1px);
+}
+
+.delete-btn {
+  background: rgba(245, 101, 101, 0.9);
+  color: #fff;
+}
+
+.delete-btn:hover {
+  background: rgba(245, 101, 101, 1);
+  transform: translateY(-1px);
+}
+
+.selection-toolbar-enter-active,
+.selection-toolbar-leave-active {
+  transition: all 0.3s ease;
+}
+
+.selection-toolbar-enter-from,
+.selection-toolbar-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(20px);
+}
+
+@media (max-width: 480px) {
+  .selection-toolbar {
+    padding: 10px 14px;
+    gap: 12px;
+    bottom: 80px;
+  }
+  
+  .toolbar-btn {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+  
+  .toolbar-btn span {
+    display: none;
   }
 }
 </style>
