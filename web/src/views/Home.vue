@@ -120,6 +120,33 @@
         <span class="tag-count">{{ allTags.length }}</span>
       </button>
 
+      <!-- 全局排序按钮 -->
+      <div class="global-sort-wrapper">
+        <button class="global-sort-btn" @click="toggleGlobalSortMenu" :title="'排序: ' + getSortLabel(globalSortType)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="4" y1="6" x2="16" y2="6"></line>
+            <line x1="4" y1="12" x2="12" y2="12"></line>
+            <line x1="4" y1="18" x2="8" y2="18"></line>
+            <path d="M17 10l3 3-3 3"></path>
+          </svg>
+          <span class="sort-label">{{ getSortLabel(globalSortType) }}</span>
+        </button>
+        <transition name="dropdown">
+          <div v-if="showGlobalSortMenu" class="global-sort-dropdown" @click.stop>
+            <div 
+              v-for="option in sortOptions" 
+              :key="option.value" 
+              class="sort-option"
+              :class="{ active: globalSortType === option.value }"
+              @click="selectGlobalSort(option.value)"
+            >
+              <span class="sort-option-icon">{{ option.icon }}</span>
+              <span>{{ option.label }}</span>
+              <span v-if="globalSortType === option.value" class="sort-check">✓</span>
+            </div>
+          </div>
+        </transition>
+      </div>
     </div>
     
     <!-- 标签选择浮层 -->
@@ -240,11 +267,6 @@
               <span v-else class="group-name main-category-name">{{ activeMenu.name }}</span>
               <span class="group-count">{{ sortAndFilterCards(group.cards, group.subMenuId).length }}</span>
             </div>
-            <SortDropdown
-              v-model="groupSortSettings[group.key]"
-              :storageKey="`sort_${activeMenu.id}_${group.subMenuId || 'main'}`"
-              @change="(val) => handleSortChange(group.key, val)"
-            />
           </div>
           <CardGrid
               :cards="sortAndFilterCards(group.cards, group.subMenuId)" 
@@ -268,11 +290,6 @@
           <span class="group-name">{{ activeSubMenu?.name || activeMenu?.name || '搜索结果' }}</span>
           <span class="group-count">{{ sortedFilteredCards.length }}</span>
         </div>
-        <SortDropdown
-          v-model="currentSortSetting"
-          :storageKey="currentSortStorageKey"
-          @change="handleCurrentSortChange"
-        />
       </div>
       <CardGrid
         :cards="sortedFilteredCards" 
@@ -1357,6 +1374,40 @@ const filteredCards = computed(() => {
 
 const groupSortSettings = ref({});
 const currentSortSetting = ref('time_desc');
+const globalSortType = ref('time_desc');
+const showGlobalSortMenu = ref(false);
+
+const sortOptions = [
+  { value: 'time_desc', label: '最新', icon: '🕐' },
+  { value: 'time_asc', label: '最早', icon: '📅' },
+  { value: 'freq_desc', label: '最常用', icon: '🔥' },
+  { value: 'freq_asc', label: '最少用', icon: '💤' },
+  { value: 'name_asc', label: '名称 A-Z', icon: '🔤' },
+  { value: 'name_desc', label: '名称 Z-A', icon: '🔡' },
+  { value: 'default', label: '默认', icon: '📋' }
+];
+
+function getSortLabel(value) {
+  const option = sortOptions.find(o => o.value === value);
+  return option ? option.label : '排序';
+}
+
+function toggleGlobalSortMenu() {
+  showGlobalSortMenu.value = !showGlobalSortMenu.value;
+}
+
+function selectGlobalSort(value) {
+  globalSortType.value = value;
+  showGlobalSortMenu.value = false;
+  localStorage.setItem('global_sort_type', value);
+}
+
+function initGlobalSort() {
+  const saved = localStorage.getItem('global_sort_type');
+  if (saved) {
+    globalSortType.value = saved;
+  }
+}
 
 const currentSortStorageKey = computed(() => {
   if (!activeMenu.value) return '';
@@ -1413,14 +1464,11 @@ function sortAndFilterCards(cardList, subMenuId) {
     );
   }
   
-  const groupKey = subMenuId ? `sub_${subMenuId}` : 'main';
-  const sortType = groupSortSettings.value[groupKey] || 'time_desc';
-  
-  return sortCards(result, sortType);
+  return sortCards(result, globalSortType.value);
 }
 
 const sortedFilteredCards = computed(() => {
-  return sortCards(filteredCards.value, currentSortSetting.value);
+  return sortCards(filteredCards.value, globalSortType.value);
 });
 
 function handleSortChange(groupKey, sortValue) {
@@ -1432,6 +1480,7 @@ function handleCurrentSortChange(sortValue) {
 }
 
 function initSortSettings() {
+  initGlobalSort();
   if (activeMenu.value) {
     const mainKey = `sort_${activeMenu.value.id}_main`;
     const savedMain = localStorage.getItem(mainKey);
@@ -1990,6 +2039,17 @@ function handleFriendLogoError(e, friend) {
 function closeEngineDropdown() {
   if (showEngineDropdown.value) {
     showEngineDropdown.value = false;
+  }
+}
+
+// 处理容器点击事件（关闭下拉菜单、清除选择）
+function handleContainerClick(event) {
+  closeEngineDropdown();
+  if (showGlobalSortMenu.value) {
+    showGlobalSortMenu.value = false;
+  }
+  if (event && event.target && event.target.classList && event.target.classList.contains('home-container') && selectedCards.value.length > 0) {
+    clearSelection();
   }
 }
 
@@ -3180,13 +3240,6 @@ async function handleMoveSubMenuDown(subMenu, parentMenu, index) {
   }
 }
 
-// 处理容器点击事件
-function handleContainerClick(event) {
-  if (event.target.classList.contains('home-container') && selectedCards.value.length > 0) {
-    clearSelection();
-  }
-}
-
 // ========== 批量移动相关函数 ==========
 
 // 取消移动
@@ -4262,6 +4315,84 @@ async function saveCardEdit() {
 .mini-tag-btn:hover .tag-count {
   background: rgba(255, 255, 255, 0.25);
   color: white;
+}
+
+/* 全局排序按钮 */
+.global-sort-wrapper {
+  position: relative;
+}
+
+.global-sort-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1.5px solid rgba(24, 144, 255, 0.25);
+  border-radius: 20px;
+  font-size: 13px;
+  color: #1890ff;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+}
+
+.global-sort-btn:hover {
+  background: linear-gradient(135deg, #1890ff 0%, #40a9ff 100%);
+  color: white;
+  border-color: transparent;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(24, 144, 255, 0.35);
+}
+
+.global-sort-btn .sort-label {
+  font-weight: 500;
+}
+
+.global-sort-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 8px;
+  background: rgba(30, 30, 30, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  padding: 6px 0;
+  min-width: 140px;
+  z-index: 1000;
+}
+
+.sort-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.sort-option:hover {
+  background: rgba(99, 179, 237, 0.3);
+}
+
+.sort-option.active {
+  background: rgba(24, 144, 255, 0.25);
+}
+
+.sort-option-icon {
+  font-size: 14px;
+}
+
+.sort-check {
+  margin-left: auto;
+  color: #40a9ff;
+  font-weight: bold;
 }
 
 /* 标签选择浮层 */
@@ -6565,5 +6696,404 @@ async function saveCardEdit() {
   .toolbar-btn span {
     display: none;
   }
+}
+
+/* ========== 全局模态框样式 ========== */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  padding: 20px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 480px;
+  max-height: 85vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: modalSlideIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.modal-content.menu-modal {
+  max-width: 360px;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, #1890ff 0%, #69c0ff 100%);
+  color: white;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+  -webkit-overflow-scrolling: touch;
+}
+
+.close-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.close-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* 按钮样式 */
+.btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #1890ff 0%, #40a9ff 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.3);
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-cancel {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+.btn-cancel:hover {
+  background: #e5e7eb;
+}
+
+/* ========== 平板适配 (768px - 1024px) ========== */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .modal-content {
+    max-width: 520px;
+    max-height: 80vh;
+  }
+  
+  .batch-modal {
+    max-width: 600px;
+  }
+  
+  .bg-panel {
+    width: 80%;
+    max-width: 700px;
+  }
+  
+  .tag-panel {
+    width: 70%;
+    max-width: 500px;
+  }
+}
+
+/* ========== 移动端适配 (小于 768px) ========== */
+@media (max-width: 768px) {
+  .modal-overlay {
+    padding: 16px;
+    align-items: flex-start;
+    padding-top: 10vh;
+  }
+  
+  .modal-content {
+    max-width: 92%;
+    max-height: 75vh;
+    border-radius: 14px;
+  }
+  
+  .modal-content.menu-modal {
+    max-width: 85%;
+  }
+  
+  .modal-header {
+    padding: 14px 16px;
+  }
+  
+  .modal-header h3 {
+    font-size: 16px;
+  }
+  
+  .modal-body {
+    padding: 16px;
+  }
+  
+  .btn {
+    padding: 10px 16px;
+    font-size: 14px;
+    min-height: 44px;
+  }
+  
+  .batch-modal {
+    max-width: 92%;
+    max-height: 70vh;
+  }
+  
+  .batch-step {
+    min-height: auto;
+  }
+  
+  .batch-textarea {
+    min-height: 120px;
+    font-size: 14px;
+  }
+  
+  .batch-tip {
+    font-size: 14px;
+  }
+  
+  .batch-actions {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  
+  .batch-actions .btn {
+    flex: 1;
+    min-width: 100px;
+  }
+}
+
+/* ========== 小屏手机适配 (小于 480px) ========== */
+@media (max-width: 480px) {
+  .modal-overlay {
+    padding: 12px;
+    padding-top: 8vh;
+  }
+  
+  .modal-content {
+    max-width: 94%;
+    max-height: 72vh;
+    border-radius: 12px;
+  }
+  
+  .modal-header {
+    padding: 12px 14px;
+  }
+  
+  .modal-header h3 {
+    font-size: 15px;
+  }
+  
+  .modal-body {
+    padding: 14px;
+  }
+  
+  .close-btn {
+    padding: 5px;
+  }
+  
+  .close-btn svg {
+    width: 18px;
+    height: 18px;
+  }
+  
+  .batch-modal {
+    max-height: 68vh;
+  }
+  
+  .batch-textarea {
+    min-height: 100px;
+    font-size: 13px;
+  }
+  
+  .batch-tip {
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+  
+  .batch-input {
+    padding: 10px;
+    font-size: 14px;
+  }
+  
+  .form-group label {
+    font-size: 13px;
+  }
+  
+  .form-group input,
+  .form-group textarea {
+    font-size: 14px;
+    padding: 10px;
+  }
+}
+
+/* ========== 超小屏幕适配 (小于 380px) ========== */
+@media (max-width: 380px) {
+  .modal-overlay {
+    padding: 10px;
+    padding-top: 6vh;
+  }
+  
+  .modal-content {
+    max-width: 96%;
+    max-height: 70vh;
+    border-radius: 10px;
+  }
+  
+  .modal-header {
+    padding: 10px 12px;
+  }
+  
+  .modal-header h3 {
+    font-size: 14px;
+  }
+  
+  .modal-body {
+    padding: 12px;
+  }
+  
+  .btn {
+    padding: 8px 14px;
+    font-size: 13px;
+    min-height: 40px;
+  }
+  
+  .batch-actions {
+    gap: 8px;
+  }
+}
+
+/* ========== 触摸设备优化 ========== */
+@media (hover: none) and (pointer: coarse) {
+  .btn,
+  .close-btn,
+  .toolbar-icon-btn,
+  .panel-tag-btn,
+  .bg-item {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  
+  .btn:active,
+  .close-btn:active {
+    transform: scale(0.96);
+    transition: transform 0.1s ease;
+  }
+  
+  .modal-overlay {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ========== 横屏模式优化 ========== */
+@media (max-height: 500px) and (orientation: landscape) {
+  .modal-overlay {
+    padding-top: 5vh;
+  }
+  
+  .modal-content {
+    max-height: 88vh;
+  }
+  
+  .batch-modal {
+    max-height: 85vh;
+  }
+  
+  .bg-panel {
+    max-height: 85vh;
+  }
+  
+  .tag-panel {
+    max-height: 80vh;
+  }
+}
+
+/* ========== 安全区域适配 (iPhone X等) ========== */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .modal-overlay {
+    padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  }
+  
+  .top-toolbar {
+    bottom: calc(20px + env(safe-area-inset-bottom));
+  }
+  
+  .selection-toolbar {
+    bottom: calc(100px + env(safe-area-inset-bottom));
+  }
+  
+  @media (max-width: 480px) {
+    .top-toolbar {
+      bottom: calc(16px + env(safe-area-inset-bottom));
+    }
+    
+    .selection-toolbar {
+      bottom: calc(80px + env(safe-area-inset-bottom));
+    }
+  }
+}
+
+/* ========== 过渡动画优化 ========== */
+.modal-enter-active,
+.modal-leave-active {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+
+.modal-enter-from .modal-content,
+.modal-leave-to .modal-content {
+  transform: scale(0.95) translateY(10px);
 }
 </style>

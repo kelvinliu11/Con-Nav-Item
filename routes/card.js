@@ -349,6 +349,21 @@ router.get('/detect-duplicates/all', auth, (req, res) => {
   });
 });
 
+// 记录卡片点击（用于频率排序）
+router.post('/:id/click', (req, res) => {
+  const cardId = req.params.id;
+  
+  db.run(
+    'UPDATE cards SET click_count = COALESCE(click_count, 0) + 1 WHERE id = ?',
+    [cardId],
+    function(err) {
+      if (err) return res.status(500).json({ error: err.message });
+      if (this.changes === 0) return res.status(404).json({ error: '卡片不存在' });
+      res.json({ success: true });
+    }
+  );
+});
+
 // 批量删除重复卡片
 router.post('/remove-duplicates', auth, (req, res) => {
   const { cardIds } = req.body;

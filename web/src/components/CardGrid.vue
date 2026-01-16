@@ -11,7 +11,7 @@
       <a :href="card.url" 
          target="_blank" 
          :title="getTooltip(card)" 
-         @click="handleLinkClick($event)"
+         @click="handleLinkClick($event, card)"
          class="card-link">
         <img class="link-icon" :src="getLogo(card)" alt="" @error="onImgError($event, card)" loading="lazy">
         <span class="link-text">{{ truncate(card.title) }}</span>
@@ -125,6 +125,7 @@ function onContextMove() {
 
 function onContextOpen() {
   if (contextMenuCard.value) {
+    recordCardClick(contextMenuCard.value.id);
     window.open(contextMenuCard.value.url, '_blank');
   }
   closeContextMenu();
@@ -151,11 +152,17 @@ function handleCardClick(event, card) {
   }
 }
 
-function handleLinkClick(event) {
+function handleLinkClick(event, card) {
   if (event.ctrlKey || event.metaKey) {
     event.preventDefault();
     event.stopPropagation();
+  } else {
+    recordCardClick(card.id);
   }
+}
+
+function recordCardClick(cardId) {
+  fetch(`/api/cards/${cardId}/click`, { method: 'POST' }).catch(() => {});
 }
 
 onMounted(() => {
@@ -260,22 +267,68 @@ function isCardSelected(card) {
   position: relative;
   z-index: 1;
   padding: 0 1rem;
+  box-sizing: border-box;
 }
 
-@media (max-width: 1200px) {
+/* 大屏桌面 1200px+ */
+@media (max-width: 1400px) {
   .container { 
-    grid-template-columns: repeat(5, 1fr); 
+    grid-template-columns: repeat(7, 1fr); 
     gap: 14px;
+    max-width: 60rem;
   }
 }
-@media (max-width: 768px) {
+
+/* 桌面/笔记本 1024-1200px */
+@media (max-width: 1200px) {
   .container { 
-    grid-template-columns: repeat(4, 1fr); 
-    gap: 3vw;
+    grid-template-columns: repeat(6, 1fr); 
+    gap: 14px;
+    max-width: 52rem;
+  }
+}
+
+/* 小笔记本/平板横屏 900-1024px */
+@media (max-width: 1024px) {
+  .container { 
+    grid-template-columns: repeat(5, 1fr); 
+    gap: 12px;
+    max-width: 46rem;
+    padding: 0 2vw;
+  }
+}
+
+/* 平板竖屏 768-900px (iPad等) */
+@media (max-width: 900px) {
+  .container { 
+    grid-template-columns: repeat(5, 1fr); 
+    gap: 12px;
     padding: 0 3vw;
   }
   .link-item {
-    min-height: 80px;
+    min-height: 82px;
+    height: auto;
+    border-radius: 14px;
+  }
+  .link-icon {
+    width: 30px;
+    height: 30px;
+  }
+  .link-text {
+    font-size: 11px;
+  }
+}
+
+/* 大手机/小平板 600-768px */
+@media (max-width: 768px) {
+  .container { 
+    grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); 
+    gap: 3vw;
+    padding: 0 4vw;
+    justify-content: center;
+  }
+  .link-item {
+    min-height: auto;
     height: auto;
     aspect-ratio: 1 / 1;
     border-radius: 14px;
@@ -288,14 +341,15 @@ function isCardSelected(card) {
     font-size: 11px;
   }
 }
-@media (max-width: 540px) {
+
+/* 中等手机 480-600px */
+@media (max-width: 600px) {
   .container { 
-    grid-template-columns: repeat(4, 1fr); 
+    grid-template-columns: repeat(auto-fit, minmax(68px, 1fr)); 
     gap: 2.5vw;
-    padding: 0 2.5vw;
+    padding: 0 3.5vw;
   }
   .link-item {
-    min-height: auto;
     aspect-ratio: 1 / 1;
     border-radius: 12px;
   }
@@ -308,18 +362,44 @@ function isCardSelected(card) {
     padding: 0 4px;
   }
 }
+
+/* 小手机 380-480px */
+@media (max-width: 480px) {
+  .container { 
+    grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); 
+    gap: 2.5vw;
+    padding: 0 3vw;
+  }
+  .link-item {
+    border-radius: 11px;
+  }
+  .link-icon {
+    width: 24px;
+    height: 24px;
+    margin-bottom: 5px;
+  }
+  .link-text {
+    font-size: 10px;
+    line-height: 1.25;
+  }
+  .card-link {
+    padding: 8px 4px;
+  }
+}
+
+/* 超小手机 <380px */
 @media (max-width: 380px) {
   .container { 
-    grid-template-columns: repeat(4, 1fr); 
+    grid-template-columns: repeat(auto-fit, minmax(58px, 1fr)); 
     gap: 2vw;
-    padding: 0 2vw;
+    padding: 0 2.5vw;
   }
   .link-item {
     border-radius: 10px;
   }
   .link-icon {
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
     margin-bottom: 4px;
   }
   .link-text {
@@ -327,7 +407,7 @@ function isCardSelected(card) {
     line-height: 1.2;
   }
   .card-link {
-    padding: 6px 4px;
+    padding: 6px 3px;
   }
 }
 
@@ -346,21 +426,36 @@ function isCardSelected(card) {
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
   user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .link-item:hover {
   background: rgba(255, 255, 255, 0.25);
-  transform: translateY(-6px) scale(1.02);
+  transform: translateY(-4px) scale(1.02);
   border-color: rgba(255, 255, 255, 0.35);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
 }
 
 .link-item:active {
-  transform: translateY(-4px) scale(0.98);
-  transition: transform 0.1s ease;
+  transform: translateY(-2px) scale(0.97);
+  transition: transform 0.08s ease;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+@media (hover: none) {
+  .link-item:hover {
+    transform: none;
+    background: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  }
+  .link-item:active {
+    transform: scale(0.95);
+    background: rgba(255, 255, 255, 0.28);
+  }
 }
 
 .link-item.selected {

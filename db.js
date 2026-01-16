@@ -95,6 +95,8 @@ async function initializeDatabase() {
       custom_logo_path TEXT,
       desc TEXT,
       "order" INTEGER DEFAULT 0,
+      click_count INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(menu_id) REFERENCES menus(id) ON DELETE CASCADE,
       FOREIGN KEY(sub_menu_id) REFERENCES sub_menus(id) ON DELETE CASCADE
     )`);
@@ -170,6 +172,18 @@ async function initializeDatabase() {
     // 添加token版本号（用于使扩展Token失效）
     try {
       await dbRun(`ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 1`);
+    } catch (e) { }
+
+    // 为 cards 表添加 click_count 和 created_at 字段（兼容旧数据库）
+    try {
+      await dbRun(`ALTER TABLE cards ADD COLUMN click_count INTEGER DEFAULT 0`);
+    } catch (e) { }
+    try {
+      await dbRun(`ALTER TABLE cards ADD COLUMN created_at TEXT DEFAULT CURRENT_TIMESTAMP`);
+    } catch (e) { }
+    // 为旧卡片设置默认创建时间
+    try {
+      await dbRun(`UPDATE cards SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL`);
     } catch (e) { }
 
     // 数据版本号表（用于前端缓存同步）
