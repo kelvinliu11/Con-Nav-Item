@@ -1313,20 +1313,21 @@ function parseUnifiedResponse(text, types, existingTags) {
 // ==================== 响应清理函数 ====================
 
 // AI 思考过程的特征模式（需要过滤掉）
+// 注意：只匹配明确的思考过程句式，避免误杀正常内容
 const AI_THINKING_PATTERNS = [
-  /(我需要|让我|由于我|首先|接下来|根据|分析|查看|访问|了解|无法|我将|我无法).{0,50}(网站|内容|信息|功能|特点|地址|链接|URL)/,
-  /^(我需要|让我|由于我|首先|接下来|根据|分析|查看|访问|了解|无法|好的|没问题)/,
-  /^(This|I need|Let me|Since I|First|Based on|According to|Okay|Sure).{0,50}/i,
-  /无法(直接)?访问/,
-  /外部(网站|链接|地址)/,
-  /请提供(更多|详细)/,
-  /核心功能是什么/
+  /(我需要|让我|由于我|我将|我无法).{0,30}(分析|查看|访问|了解|处理|确认)/,
+  /^(我需要|让我|由于我|我将|我无法|好的，|没问题，|当然，)/,
+  /^(This|I need to|Let me|Since I|I will|I cannot|Okay,|Sure,).{0,30}/i,
+  /无法(直接)?访问(该|这个|此)?(网站|链接|页面)/,
+  /无法获取(网站|网页|页面)(内容|信息)/,
+  /请提供(更多|详细)(信息|内容)/,
+  /抱歉[，,]我无法/
 ];
 
 function isAIThinkingText(text) {
-  if (!text || text.length < 5) return false;
+  if (!text || text.length < 10) return false;
+  if (text.length <= 50) return false;
   
-  // 移除常见的标签 and 代码块标记再检查
   const clean = text.replace(/<[^>]+>/g, '').trim();
   
   return AI_THINKING_PATTERNS.some(pattern => pattern.test(clean));
@@ -1365,27 +1366,34 @@ function cleanName(text) {
       .substring(0, 40); // 控制在合理范围
   }
   
-  function cleanDescription(text) {
-    if (!text) return '';
-    
-    let processed = stripThoughtTags(text);
-    
-    // 检测是否为 AI 思考过程文本
-    if (isAIThinkingText(processed)) {
-      console.warn('Detected AI thinking text in description, rejecting:', processed.substring(0, 50));
-      return '';
-    }
-    
-    let cleaned = processed
-      .replace(/```[\s\S]*?```/g, '')
-      .replace(/^["'「」『』""'']+|["'「」『』""'']+$/g, '')
-      .replace(/^(描述[：:]\s*|简介[：:]\s*|网站描述[：:]\s*|Description[：:]\s*)/i, '')
-      .replace(/[\r\n]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .replace(/[。.]+$/, '');
-    
-    return cleaned.length > 200 ? cleaned.substring(0, 200) + '...' : cleaned;
+    function cleanDescription(text) {
+      if (!text) return '';
+      
+      let processed = stripThoughtTags(text);
+      
+      // 检测是否为 AI 思考过程文本
+      if (isAIThinkingText(processed)) {
+        // 尝试从思考文本中提取最后一句有用的内容
+        const sentences = processed.split(/[。！？\n]/).filter(s => s.trim().length > 10);
+        const lastSentence = sentences[sentences.length - 1]?.trim();
+        if (lastSentence && lastSentence.length >= 15 && lastSentence.length <= 100 && !isAIThinkingText(lastSentence)) {
+          processed = lastSentence;
+        } else {
+          console.warn('Detected AI thinking text in description, rejecting:', processed.substring(0, 50));
+          return '';
+        }
+      }
+      
+      let cleaned = processed
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/^["'「」『』""'']+|["'「」『』""'']+$/g, '')
+        .replace(/^(描述[：:]\s*|简介[：:]\s*|网站描述[：:]\s*|Description[：:]\s*)/i, '')
+        .replace(/[\r\n]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/[。.]+$/, '');
+      
+      return cleaned.length > 200 ? cleaned.substring(0, 200) + '...' : cleaned;
 
 }
 

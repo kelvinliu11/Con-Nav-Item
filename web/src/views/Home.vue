@@ -3833,34 +3833,29 @@ async function generateAITags() {
         }
       }
       
-        // 创建并添加新标签
-        for (const tagName of newTags) {
-          const existingTag = allTags.value.find(t => t.name.toLowerCase() === tagName.toLowerCase());
-          if (existingTag) {
-            if (!cardEditForm.value.tagIds.includes(existingTag.id)) {
-              cardEditForm.value.tagIds.push(existingTag.id);
-            }
-          } else {
-            try {
-              const createRes = await api.post('/api/tags', { name: tagName });
-              if (createRes.data && createRes.data.id) {
-                allTags.value.push(createRes.data);
-                cardEditForm.value.tagIds.push(createRes.data.id);
+        // 先刷新标签列表，避免创建重复标签导致400错误
+          const tagsRes = await api.get('/api/tags');
+          allTags.value = tagsRes.data;
+          
+          // 创建并添加新标签
+          for (const tagName of newTags) {
+            const existingTag = allTags.value.find(t => t.name.toLowerCase() === tagName.toLowerCase());
+            if (existingTag) {
+              if (!cardEditForm.value.tagIds.includes(existingTag.id)) {
+                cardEditForm.value.tagIds.push(existingTag.id);
               }
-            } catch (e) {
-              if (e.response?.status === 400 && e.response?.data?.error?.includes('已存在')) {
-                const tagsRes = await api.get('/api/tags');
-                allTags.value = tagsRes.data;
-                const refreshedTag = allTags.value.find(t => t.name.toLowerCase() === tagName.toLowerCase());
-                if (refreshedTag && !cardEditForm.value.tagIds.includes(refreshedTag.id)) {
-                  cardEditForm.value.tagIds.push(refreshedTag.id);
+            } else {
+              try {
+                const createRes = await api.post('/api/tags', { name: tagName });
+                if (createRes.data && createRes.data.id) {
+                  allTags.value.push(createRes.data);
+                  cardEditForm.value.tagIds.push(createRes.data.id);
                 }
-              } else {
+              } catch (e) {
                 console.warn('创建标签失败:', tagName, e);
               }
             }
           }
-        }
       
       showToastMessage('标签推荐成功', 'success');
     } else {
