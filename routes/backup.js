@@ -856,62 +856,39 @@ router.post('/restore/:filename', authMiddleware, backupLimiter, async (req, res
       // 清理失败不影响主流程
     }
 
-    let message = '备份恢复成功！数据库将在后台重新加载。';
-    if (skippedFiles.length > 0) {
-      message += ` 已跳过: ${skippedFiles.join(', ')}`;
-    }
-
-    // 先发送响应，避免数据库重连导致请求超时
-    res.json({ 
-      success: true, 
-      message,
-      restored: restoredFiles,
-      skipped: skippedFiles,
-      preRestoreBackup: preRestoreFiles.length > 0 ? `backups/pre-restore/*-${timestamp}` : null,
-      needReload: true, // 提示前端需要重新加载数据
-      checkAIConfig: true // 提示前端检查 AI 配置
-    });
-
-    // 在响应发送后异步重连数据库
-    setImmediate(async () => {
+    // 【关键改动】在发送响应之前，同步完成数据库重连和密钥重新初始化
+    // 这样前端收到响应后刷新页面时，后端已经准备好了正确的密钥
+    try {
+      // 1. 重新连接数据库
+      if (dbClosed && db.reconnect) {
+        await db.reconnect();
+        console.log('✓ 数据库已重新连接');
+      }
+      
+      // 2. 清除加密密钥缓存并重新初始化（确保使用恢复的密钥）
+      const { clearCachedSecret, initCryptoSecret } = require('../utils/crypto');
+      clearCachedSecret();
+      await initCryptoSecret();
+      console.log('✓ 加密密钥已重新加载');
+      
+      // 3. 验证 AI 配置是否可用
       try {
-        // 如果之前关闭了数据库连接，现在重新连接
-        if (dbClosed && db.reconnect) {
-          await db.reconnect();
-          console.log('✓ 数据库已重新连接，恢复的数据已生效');
-        }
-        
-        // 清除加密密钥缓存并重新初始化（确保使用恢复的密钥）
-        try {
-          const { clearCachedSecret, initCryptoSecret } = require('../utils/crypto');
-          clearCachedSecret();
-          await initCryptoSecret();
-          console.log('✓ 加密密钥已重新加载');
-          
-          // 验证 AI 配置是否可用
-          try {
-            const { decrypt } = require('../utils/crypto');
-            const aiConfig = await db.getAIConfig();
-            if (aiConfig.apiKey) {
-              const encrypted = JSON.parse(aiConfig.apiKey);
-              const decrypted = decrypt(encrypted.encrypted, encrypted.iv, encrypted.authTag);
-              if (decrypted) {
-                console.log('✓ AI 配置验证成功');
-              } else {
-                console.warn('⚠️ AI 配置 API Key 解密失败，可能需要重新配置');
-              }
-            }
-          } catch (e) {
-            console.warn('⚠️ AI 配置验证失败:', e.message);
+        const { decrypt } = require('../utils/crypto');
+        const aiConfig = await db.getAIConfig();
+        if (aiConfig.apiKey) {
+          const encrypted = JSON.parse(aiConfig.apiKey);
+          const decrypted = decrypt(encrypted.encrypted, encrypted.iv, encrypted.authTag);
+          if (decrypted) {
+            console.log('✓ AI 配置验证成功');
+          } else {
+            console.warn('⚠️ AI 配置 API Key 解密失败，可能需要重新配置');
           }
-        } catch (e) {
-          console.warn('重新加载加密密钥失败:', e.message);
         }
       } catch (e) {
-        console.error('数据库重连失败:', e);
+        console.warn('⚠️ AI 配置验证失败:', e.message);
       }
-
-      // 清除应用缓存
+      
+      // 4. 清除应用缓存
       try {
         const app = require('../app');
         if (app.clearCache) {
@@ -920,6 +897,25 @@ router.post('/restore/:filename', authMiddleware, backupLimiter, async (req, res
       } catch (e) {
         // 忽略缓存清除失败
       }
+    } catch (e) {
+      console.error('恢复后初始化失败:', e.message);
+      // 即使初始化失败，也继续返回成功（数据已恢复，只是密钥可能需要重新配置）
+    }
+
+    let message = '备份恢复成功！';
+    if (skippedFiles.length > 0) {
+      message += ` 已跳过: ${skippedFiles.join(', ')}`;
+    }
+
+    // 所有初始化完成后，再发送响应
+    res.json({ 
+      success: true, 
+      message,
+      restored: restoredFiles,
+      skipped: skippedFiles,
+      preRestoreBackup: preRestoreFiles.length > 0 ? `backups/pre-restore/*-${timestamp}` : null,
+      needReload: true,
+      checkAIConfig: true
     });
 
   } catch (error) {
