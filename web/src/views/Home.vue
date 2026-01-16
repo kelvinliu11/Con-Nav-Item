@@ -1,5 +1,25 @@
 ﻿<template>
   <div class="home-container" @click="handleContainerClick">
+    <!-- 移动端汉堡按钮 -->
+    <button class="mobile-hamburger" @click.stop="mobileDrawerVisible = true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="3" y1="6" x2="21" y2="6"></line>
+        <line x1="3" y1="12" x2="21" y2="12"></line>
+        <line x1="3" y1="18" x2="21" y2="18"></line>
+      </svg>
+    </button>
+    
+    <!-- 移动端抽屉导航 -->
+    <MobileDrawer
+      :visible="mobileDrawerVisible"
+      :menus="menus"
+      :activeMenuId="activeMenu?.id"
+      :activeSubMenuId="activeSubMenu?.id"
+      @close="mobileDrawerVisible = false"
+      @selectMenu="handleDrawerMenuSelect"
+      @selectSubMenu="handleDrawerSubMenuSelect"
+    />
+    
     <div class="menu-bar-fixed">
       <MenuBar 
         :menus="menus" 
@@ -19,9 +39,8 @@
     </div>
     
     <div class="search-section">
-<div class="search-box-wrapper" v-if="selectedEngine">
+      <div class="search-toolbar" v-if="selectedEngine">
         <div class="search-container">
-          <!-- 搜索引擎下拉选择器 -->
           <div class="search-engine-dropdown" @click.stop>
             <button @click="toggleEngineDropdown" class="engine-selector" title="选择搜索引擎">
               <span class="engine-icon">
@@ -32,18 +51,15 @@
                   class="engine-icon-img"
                 />
               </span>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="6 9 12 15 18 9"></polyline>
               </svg>
             </button>
-            <!-- 下拉菜单 -->
             <transition name="dropdown">
               <div v-if="showEngineDropdown" class="engine-dropdown-menu" @click.stop>
                 <div class="engine-menu-header">
                   <span>搜索引擎</span>
-                  <button @click="openAddEngineModal" class="add-engine-icon-btn" title="添加自定义">
-                    +
-                  </button>
+                  <button @click="openAddEngineModal" class="add-engine-icon-btn" title="添加自定义">+</button>
                 </div>
                 <div class="engine-menu-items">
                   <div v-for="(engine, index) in searchEngines" :key="engine.name" class="engine-menu-row">
@@ -52,12 +68,7 @@
                       @click="selectEngineFromDropdown(engine)"
                     >
                       <span class="engine-icon">
-                        <img
-                          :src="getEngineIcon(engine)" 
-                          :alt="engine.label"
-                          @error="handleEngineIconError"
-                          class="engine-icon-img"
-                        />
+                        <img :src="getEngineIcon(engine)" :alt="engine.label" @error="handleEngineIconError" class="engine-icon-img"/>
                       </span>
                       <span class="engine-label">{{ engine.label }}</span>
                     </button>
@@ -75,77 +86,65 @@
               </div>
             </transition>
           </div>
-<input 
+          <input 
             v-model="searchQuery" 
             type="text" 
             :placeholder="selectedEngine ? selectedEngine.placeholder : '搜索...'" 
             class="search-input"
             @keyup.enter="handleSearch"
           />
-          <button v-if="searchQuery" class="clear-btn" @click="clearSearch" aria-label="清空" title="clear">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+          <button v-if="searchQuery" class="clear-btn" @click="clearSearch" aria-label="清空">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
           </button>
-          <button @click="handleSearch" class="search-btn" title="search">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+          <button @click="handleSearch" class="search-btn" title="搜索">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
               <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </button>
         </div>
-      </div>
-    </div>
-    
-    <!-- 迷你标签栏 -->
-    <div class="mini-tag-bar">
-      <!-- 已选标签显示（支持多标签） -->
-      <div class="selected-tag-display" v-if="selectedTagIds.length > 0">
-        <span 
-          v-for="tagId in selectedTagIds" 
-          :key="tagId"
-          class="mini-tag-chip" 
-          :style="{ backgroundColor: getTagById(tagId)?.color }"
-        >
-          {{ getTagById(tagId)?.name }}
-          <button class="mini-tag-close" @click="toggleTagFilter(tagId)" title="移除此标签">×</button>
-        </span>
-        <button v-if="selectedTagIds.length > 1" class="mini-tag-clear-all" @click="clearTagFilter" title="清除全部">
-          清除
-        </button>
-      </div>
-      <!-- 标签选择按钮 -->
-      <button v-if="allTags.length > 0" class="mini-tag-btn" @click="showTagPanel = !showTagPanel" :title="showTagPanel ? '关闭标签' : '选择标签'">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
-          <line x1="7" y1="7" x2="7.01" y2="7"/>
-        </svg>
-        <span class="tag-count">{{ allTags.length }}</span>
-      </button>
-
-      <!-- 全局排序按钮 -->
-      <div class="global-sort-wrapper">
-        <button class="global-sort-btn" @click="toggleGlobalSortMenu" :title="'排序: ' + getSortLabel(globalSortType)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="4" y1="6" x2="16" y2="6"></line>
-            <line x1="4" y1="12" x2="12" y2="12"></line>
-            <line x1="4" y1="18" x2="8" y2="18"></line>
-            <path d="M17 10l3 3-3 3"></path>
-          </svg>
-          <span class="sort-label">{{ getSortLabel(globalSortType) }}</span>
-        </button>
-        <transition name="dropdown">
-          <div v-if="showGlobalSortMenu" class="global-sort-dropdown" @click.stop>
-            <div 
-              v-for="option in sortOptions" 
-              :key="option.value" 
-              class="sort-option"
-              :class="{ active: globalSortType === option.value }"
-              @click="selectGlobalSort(option.value)"
-            >
-              <span class="sort-option-icon">{{ option.icon }}</span>
-              <span>{{ option.label }}</span>
-              <span v-if="globalSortType === option.value" class="sort-check">✓</span>
-            </div>
+        
+        <div class="toolbar-actions">
+          <button v-if="allTags.length > 0" class="toolbar-icon-btn" :class="{ active: selectedTagIds.length > 0 }" @click="showTagPanel = !showTagPanel" title="标签筛选">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+              <line x1="7" y1="7" x2="7.01" y2="7"/>
+            </svg>
+            <span v-if="selectedTagIds.length > 0" class="toolbar-badge">{{ selectedTagIds.length }}</span>
+          </button>
+          
+          <div class="global-sort-wrapper">
+            <button class="toolbar-icon-btn" @click="toggleGlobalSortMenu" :title="'排序: ' + getSortLabel(globalSortType)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="4" y1="6" x2="16" y2="6"></line>
+                <line x1="4" y1="12" x2="12" y2="12"></line>
+                <line x1="4" y1="18" x2="8" y2="18"></line>
+              </svg>
+            </button>
+            <transition name="dropdown">
+              <div v-if="showGlobalSortMenu" class="global-sort-dropdown" @click.stop>
+                <div 
+                  v-for="option in sortOptions" 
+                  :key="option.value" 
+                  class="sort-option"
+                  :class="{ active: globalSortType === option.value }"
+                  @click="selectGlobalSort(option.value)"
+                >
+                  <span class="sort-option-icon">{{ option.icon }}</span>
+                  <span>{{ option.label }}</span>
+                  <span v-if="globalSortType === option.value" class="sort-check">✓</span>
+                </div>
+              </div>
+            </transition>
           </div>
-        </transition>
+        </div>
+      </div>
+      
+      <div v-if="selectedTagIds.length > 0" class="active-filters">
+        <span v-for="tagId in selectedTagIds" :key="tagId" class="filter-chip" :style="{ backgroundColor: getTagById(tagId)?.color }">
+          {{ getTagById(tagId)?.name }}
+          <button class="chip-close" @click="toggleTagFilter(tagId)">×</button>
+        </span>
+        <button v-if="selectedTagIds.length > 1" class="clear-filters-btn" @click="clearTagFilter">清除全部</button>
       </div>
     </div>
     
@@ -261,14 +260,21 @@
     <div class="cards-grouped-container" v-if="!activeSubMenu && activeMenu && groupedCards.length > 0">
       <template v-for="(group, index) in groupedCards" :key="group.key">
         <div v-if="sortAndFilterCards(group.cards, group.subMenuId).length > 0" class="card-group">
-          <div class="card-group-header">
+          <div class="card-group-header" @click="toggleGroupCollapse(group.key)">
             <div class="group-header-left">
+              <button class="collapse-btn" :class="{ collapsed: isGroupCollapsed(group.key) }">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </button>
               <span v-if="group.name" class="group-name">{{ group.name }}</span>
               <span v-else class="group-name main-category-name">{{ activeMenu.name }}</span>
               <span class="group-count">{{ sortAndFilterCards(group.cards, group.subMenuId).length }}</span>
             </div>
           </div>
-          <CardGrid
+          <transition name="group-collapse">
+            <CardGrid
+              v-if="!isGroupCollapsed(group.key)"
               :cards="sortAndFilterCards(group.cards, group.subMenuId)" 
               :selectedCards="selectedCards"
               :categoryId="activeMenu?.id"
@@ -280,6 +286,7 @@
               @requireAuth="handleRequireAuth"
               @click.stop
             />
+          </transition>
         </div>
       </template>
     </div>
@@ -907,10 +914,14 @@ const api = {
   post: (url, data) => axios.post(url, data, { headers: authHeaders() })
 };
 import MenuBar from '../components/MenuBar.vue';
+import MobileDrawer from '../components/MobileDrawer.vue';
 import SortDropdown from '../components/SortDropdown.vue';
 import { filterCardsWithPinyin } from '../utils/pinyin';
 import { isDuplicateCard } from '../utils/urlNormalizer';
 const CardGrid = defineAsyncComponent(() => import('../components/CardGrid.vue'));
+
+const mobileDrawerVisible = ref(false);
+const collapsedGroups = ref(new Set());
 
 const menus = ref([]);
 const activeMenu = ref(null);
@@ -2071,6 +2082,34 @@ async function selectMenu(menu, parentMenu = null) {
   initSortSettings();
   
   preloadAdjacentCategories();
+}
+
+function handleDrawerMenuSelect(menu) {
+  activeMenu.value = menu;
+  activeSubMenu.value = null;
+  loadCards();
+  initSortSettings();
+}
+
+function handleDrawerSubMenuSelect(subMenu, parentMenu) {
+  activeMenu.value = parentMenu;
+  activeSubMenu.value = subMenu;
+  loadCards();
+  initSortSettings();
+}
+
+function toggleGroupCollapse(groupKey) {
+  const newSet = new Set(collapsedGroups.value);
+  if (newSet.has(groupKey)) {
+    newSet.delete(groupKey);
+  } else {
+    newSet.add(groupKey);
+  }
+  collapsedGroups.value = newSet;
+}
+
+function isGroupCollapsed(groupKey) {
+  return collapsedGroups.value.has(groupKey);
 }
 
 // 预加载相邻分类的卡片
@@ -3764,6 +3803,47 @@ async function saveCardEdit() {
 </script>
 
 <style scoped>
+/* 移动端汉堡按钮 */
+.mobile-hamburger {
+  display: none;
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 300;
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 12px;
+  color: #fff;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.mobile-hamburger:hover {
+  background: rgba(255, 255, 255, 0.25);
+  transform: scale(1.05);
+}
+
+.mobile-hamburger:active {
+  transform: scale(0.95);
+}
+
+@media (max-width: 768px) {
+  .mobile-hamburger {
+    display: flex;
+  }
+  
+  .menu-bar-fixed {
+    display: none;
+  }
+}
+
 .menu-bar-fixed {
   position: fixed;
   top: .6rem;
@@ -3774,22 +3854,6 @@ async function saveCardEdit() {
   z-index: 200;
   pointer-events: none;
   contain: layout;
-}
-
-/* 移动端菜单栏添加背景，防止与卡片重叠 */
-@media (max-width: 768px) {
-  .menu-bar-fixed {
-    top: 0;
-    padding-top: 0.6rem;
-    padding-bottom: 0.5rem;
-    background: linear-gradient(to bottom, 
-      rgba(0, 0, 0, 0.7) 0%, 
-      rgba(0, 0, 0, 0.5) 70%,
-      rgba(0, 0, 0, 0) 100%
-    );
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-  }
 }
 
 /* 搜索引擎下拉选择器 */
@@ -3986,33 +4050,6 @@ async function saveCardEdit() {
   transform: translateY(-10px);
 }
 
-.search-container {
-  display: flex;
-  align-items: center;
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 28px;
-  padding: 0.5rem 0.8rem;
-  box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.12),
-    0 2px 8px rgba(0, 0, 0, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  max-width: 620px;
-  width: 90%;
-  position: relative;
-  z-index: 10;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  transition: all 0.3s ease;
-}
-
-.search-container:focus-within {
-  box-shadow: 
-    0 12px 40px rgba(24, 144, 255, 0.2),
-    0 4px 12px rgba(0, 0, 0, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  border-color: rgba(24, 144, 255, 0.4);
-  transform: translateY(-2px);
-}
-
 .search-input {
   flex: 1;
   border: none;
@@ -4120,32 +4157,180 @@ async function saveCardEdit() {
   position: relative;
   z-index: 50;
   margin-top: 10vh;
+  width: 100%;
 }
 
-.search-box-wrapper {
+.search-toolbar {
   display: flex;
-  flex-direction: column;
   align-items: center;
+  gap: 12px;
   width: 100%;
-  max-width: 620px;
+  max-width: 680px;
   padding: 0 1rem;
+  box-sizing: border-box;
+}
+
+.search-container {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 28px;
+  padding: 0.4rem 0.6rem;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.12),
+    0 2px 8px rgba(0, 0, 0, 0.08);
+  flex: 1;
+  position: relative;
+  z-index: 10;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  transition: all 0.3s ease;
+}
+
+.search-container:focus-within {
+  box-shadow: 
+    0 12px 40px rgba(24, 144, 255, 0.2),
+    0 4px 12px rgba(0, 0, 0, 0.1);
+  border-color: rgba(24, 144, 255, 0.4);
+  transform: translateY(-2px);
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar-icon-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  position: relative;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.toolbar-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
+}
+
+.toolbar-icon-btn.active {
+  background: rgba(24, 144, 255, 0.8);
+  color: #fff;
+}
+
+.toolbar-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #ff4d4f;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+.active-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 680px;
+  padding: 0 1rem;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.chip-close {
+  background: rgba(255, 255, 255, 0.3);
+  border: none;
+  color: #fff;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  line-height: 1;
+}
+
+.chip-close:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.clear-filters-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: rgba(255, 255, 255, 0.9);
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.clear-filters-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 /* 移动端搜索区域适配 */
 @media (max-width: 768px) {
   .search-section {
-    margin-top: 8vh;
+    margin-top: 80px;
     padding: 0.8rem 0 0 0;
   }
   
-  .search-box-wrapper {
-    padding: 0 3vw;
+  .search-toolbar {
+    flex-direction: column;
+    gap: 10px;
+    padding: 0 16px;
   }
   
   .search-container {
-    width: 94%;
-    padding: 0.4rem 0.6rem;
-    border-radius: 24px;
+    width: 100%;
+    padding: 0.35rem 0.5rem;
+    border-radius: 22px;
+  }
+  
+  .toolbar-actions {
+    width: 100%;
+    justify-content: center;
+    gap: 12px;
+  }
+  
+  .toolbar-icon-btn {
+    width: 40px;
+    height: 40px;
   }
   
   .search-input {
@@ -4154,18 +4339,23 @@ async function saveCardEdit() {
   }
   
   .search-btn {
-    width: 38px;
-    height: 38px;
+    width: 36px;
+    height: 36px;
   }
   
-  .engine-selector {
-    padding: 6px 8px;
+  .active-filters {
+    margin-top: 10px;
+    padding: 0 16px;
   }
-  
-  .engine-icon-img {
-    width: 18px;
-    height: 18px;
-  }
+}
+
+.engine-selector {
+  padding: 6px 8px;
+}
+
+.engine-icon-img {
+  width: 18px;
+  height: 18px;
 }
 
 @media (max-width: 480px) {
@@ -7095,5 +7285,150 @@ async function saveCardEdit() {
 .modal-enter-from .modal-content,
 .modal-leave-to .modal-content {
   transform: scale(0.95) translateY(10px);
+}
+
+/* ========== 分组头部样式 ========== */
+.cards-grouped-container {
+  width: 100%;
+  max-width: 68rem;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.card-group {
+  margin-bottom: 1.5rem;
+}
+
+.card-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  margin: 0 0 10px 0;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.card-group-header:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.card-group-header.single-header {
+  cursor: default;
+}
+
+.card-group-header.single-header:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.group-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.collapse-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.collapse-btn svg {
+  transition: transform 0.25s ease;
+}
+
+.collapse-btn.collapsed svg {
+  transform: rotate(-90deg);
+}
+
+.collapse-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.group-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.main-category-name {
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+}
+
+.group-count {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.15);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+/* 分组折叠动画 */
+.group-collapse-enter-active,
+.group-collapse-leave-active {
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.group-collapse-enter-from,
+.group-collapse-leave-to {
+  opacity: 0;
+  max-height: 0;
+  transform: translateY(-10px);
+}
+
+.group-collapse-enter-to,
+.group-collapse-leave-from {
+  opacity: 1;
+  max-height: 2000px;
+}
+
+.cards-single-container {
+  width: 100%;
+  max-width: 68rem;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+@media (max-width: 768px) {
+  .cards-grouped-container,
+  .cards-single-container {
+    padding: 0 8px;
+  }
+  
+  .card-group-header {
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    border-radius: 10px;
+  }
+  
+  .collapse-btn {
+    width: 22px;
+    height: 22px;
+  }
+  
+  .group-name {
+    font-size: 13px;
+  }
+  
+  .group-count {
+    font-size: 11px;
+    padding: 2px 6px;
+  }
 }
 </style>

@@ -263,18 +263,18 @@ function isCardSelected(card) {
   width: 100%;
   display: grid;
   grid-template-columns: repeat(8, 1fr);
-  gap: 16px;
+  gap: 18px;
   position: relative;
   z-index: 1;
   padding: 0 1rem;
   box-sizing: border-box;
 }
 
-/* 大屏桌面 1200px+ */
+/* 大屏桌面 1400px+ */
 @media (max-width: 1400px) {
   .container { 
     grid-template-columns: repeat(7, 1fr); 
-    gap: 14px;
+    gap: 16px;
     max-width: 60rem;
   }
 }
@@ -292,90 +292,98 @@ function isCardSelected(card) {
 @media (max-width: 1024px) {
   .container { 
     grid-template-columns: repeat(5, 1fr); 
-    gap: 12px;
+    gap: 14px;
     max-width: 46rem;
     padding: 0 2vw;
   }
 }
 
-/* 平板竖屏 768-900px (iPad等) */
+/* 平板竖屏 768-900px (iPad等) - 4列 */
 @media (max-width: 900px) {
   .container { 
-    grid-template-columns: repeat(5, 1fr); 
-    gap: 12px;
-    padding: 0 3vw;
+    grid-template-columns: repeat(4, 1fr); 
+    gap: 14px;
+    padding: 0 4vw;
   }
   .link-item {
-    min-height: 82px;
+    min-height: 90px;
     height: auto;
-    border-radius: 14px;
+    border-radius: 16px;
   }
   .link-icon {
-    width: 30px;
-    height: 30px;
+    width: 34px;
+    height: 34px;
   }
   .link-text {
-    font-size: 11px;
+    font-size: 12px;
   }
 }
 
-/* 大手机/小平板 600-768px */
+/* 移动端 ≤768px - 固定3列 */
 @media (max-width: 768px) {
   .container { 
-    grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); 
-    gap: 3vw;
-    padding: 0 4vw;
-    justify-content: center;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    padding: 0 16px;
   }
   .link-item {
-    min-height: auto;
+    min-height: 100px;
     height: auto;
-    aspect-ratio: 1 / 1;
+    border-radius: 18px;
+  }
+  .link-icon {
+    width: 36px;
+    height: 36px;
+    margin-bottom: 8px;
+  }
+  .link-text {
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .card-link {
+    padding: 14px 8px;
+  }
+}
+
+/* 小手机 ≤480px - 固定3列，稍小间距 */
+@media (max-width: 480px) {
+  .container { 
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    padding: 0 12px;
+  }
+  .link-item {
+    min-height: 90px;
+    border-radius: 16px;
+  }
+  .link-icon {
+    width: 32px;
+    height: 32px;
+    margin-bottom: 6px;
+  }
+  .link-text {
+    font-size: 11px;
+    line-height: 1.3;
+  }
+  .card-link {
+    padding: 12px 6px;
+  }
+}
+
+/* 超小手机 <380px - 仍保持3列 */
+@media (max-width: 380px) {
+  .container { 
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    padding: 0 10px;
+  }
+  .link-item {
+    min-height: 85px;
     border-radius: 14px;
   }
   .link-icon {
     width: 28px;
     height: 28px;
-  }
-  .link-text {
-    font-size: 11px;
-  }
-}
-
-/* 中等手机 480-600px */
-@media (max-width: 600px) {
-  .container { 
-    grid-template-columns: repeat(auto-fit, minmax(68px, 1fr)); 
-    gap: 2.5vw;
-    padding: 0 3.5vw;
-  }
-  .link-item {
-    aspect-ratio: 1 / 1;
-    border-radius: 12px;
-  }
-  .link-icon {
-    width: 26px;
-    height: 26px;
-  }
-  .link-text {
-    font-size: 10px;
-    padding: 0 4px;
-  }
-}
-
-/* 小手机 380-480px */
-@media (max-width: 480px) {
-  .container { 
-    grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); 
-    gap: 2.5vw;
-    padding: 0 3vw;
-  }
-  .link-item {
-    border-radius: 11px;
-  }
-  .link-icon {
-    width: 24px;
-    height: 24px;
     margin-bottom: 5px;
   }
   .link-text {
@@ -383,50 +391,29 @@ function isCardSelected(card) {
     line-height: 1.25;
   }
   .card-link {
-    padding: 8px 4px;
-  }
-}
-
-/* 超小手机 <380px */
-@media (max-width: 380px) {
-  .container { 
-    grid-template-columns: repeat(auto-fit, minmax(58px, 1fr)); 
-    gap: 2vw;
-    padding: 0 2.5vw;
-  }
-  .link-item {
-    border-radius: 10px;
-  }
-  .link-icon {
-    width: 22px;
-    height: 22px;
-    margin-bottom: 4px;
-  }
-  .link-text {
-    font-size: 9px;
-    line-height: 1.2;
-  }
-  .card-link {
-    padding: 6px 3px;
+    padding: 10px 4px;
   }
 }
 
 .link-item {
-  background: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-radius: 16px;
-  min-height: 88px;
-  height: 88px;
+  background: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 18px;
+  min-height: 92px;
+  height: 92px;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   position: relative;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 
+    0 4px 20px rgba(0, 0, 0, 0.08),
+    0 1px 3px rgba(0, 0, 0, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
@@ -434,33 +421,44 @@ function isCardSelected(card) {
 }
 
 .link-item:hover {
-  background: rgba(255, 255, 255, 0.25);
-  transform: translateY(-4px) scale(1.02);
-  border-color: rgba(255, 255, 255, 0.35);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
+  background: rgba(255, 255, 255, 0.28);
+  transform: translateY(-6px) scale(1.03);
+  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow: 
+    0 16px 40px rgba(0, 0, 0, 0.15),
+    0 4px 12px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
 .link-item:active {
   transform: translateY(-2px) scale(0.97);
   transition: transform 0.08s ease;
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.32);
 }
 
 @media (hover: none) {
   .link-item:hover {
     transform: none;
-    background: rgba(255, 255, 255, 0.15);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+    background: rgba(255, 255, 255, 0.18);
+    box-shadow: 
+      0 4px 20px rgba(0, 0, 0, 0.08),
+      0 1px 3px rgba(0, 0, 0, 0.05),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
   }
   .link-item:active {
-    transform: scale(0.95);
-    background: rgba(255, 255, 255, 0.28);
+    transform: scale(0.96);
+    background: rgba(255, 255, 255, 0.3);
+    box-shadow: 
+      0 2px 8px rgba(0, 0, 0, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.15);
   }
 }
 
 .link-item.selected {
-  border: 2px solid rgba(99, 179, 237, 0.8);
-  box-shadow: 0 0 0 3px rgba(99, 179, 237, 0.3), 0 4px 16px rgba(0, 0, 0, 0.1);
+  border: 2px solid rgba(99, 179, 237, 0.85);
+  box-shadow: 
+    0 0 0 4px rgba(99, 179, 237, 0.25), 
+    0 4px 20px rgba(0, 0, 0, 0.1);
 }
 
 .card-link {
@@ -472,23 +470,23 @@ function isCardSelected(card) {
   justify-content: center;
   width: 100%;
   height: 100%;
-  padding: 8px 6px;
+  padding: 10px 8px;
   box-sizing: border-box;
   position: relative;
   z-index: 1;
 }
 
 .link-icon {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   object-fit: contain;
-  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.2));
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  margin-bottom: 6px;
+  filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.25));
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-bottom: 8px;
 }
 
 .link-item:hover .link-icon {
-  transform: scale(1.15);
+  transform: scale(1.12);
 }
 
 .link-text {
@@ -496,16 +494,16 @@ function isCardSelected(card) {
   font-weight: 500;
   text-align: center;
   color: #ffffff;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
   max-width: 100%;
-  padding: 0 6px;
+  padding: 0 4px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 1.35;
-  letter-spacing: 0.02em;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
 }
 
 .card-selected-badge {
