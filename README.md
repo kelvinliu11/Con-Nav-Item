@@ -171,9 +171,6 @@ Con-Nav-Item/
 │   ├── install-linux.sh     # Linux 一键安装
 │   ├── install-serv00.sh    # Serv00 一键安装
 │   └── check-password.js    # 密码管理工具
-├── docs/                     # 文档
-│   ├── deployment/          # 部署相关文档
-│   └── features/            # 功能说明文档
 ├── database/                 # 数据库文件
 ├── backups/                  # 备份文件
 └── config/                   # 配置文件
@@ -369,7 +366,25 @@ npm start
 
 ### Serv00 部署问题
 
-如果遇到 524 错误或前端无法显示，查看 [docs/deployment/serv00.md](docs/deployment/serv00.md)
+如果遇到 524 错误或前端无法显示：
+
+**快速修复：**
+```bash
+# 一键修复脚本
+bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/Con-Nav-Item/main/scripts/fix-serv00-frontend.sh)
+
+# 或指定域名
+DOMAIN=your-domain.com bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/Con-Nav-Item/main/scripts/fix-serv00-frontend.sh)
+```
+
+**验证部署：**
+```bash
+# 检查进程
+ps aux | grep node20
+
+# 测试 API
+curl -I https://your-domain.com/api/menus
+```
 
 ### 密码管理
 
