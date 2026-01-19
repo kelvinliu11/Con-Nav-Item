@@ -1588,6 +1588,7 @@ async function initGlobalSort() {
 }
 
 // 分组显示的卡片（主菜单下的卡片 + 各子菜单下的卡片）
+// 重新设计：基于 cards.value 进行分组，而不是依赖 cardsCache
 const groupedCards = computed(() => {
   if (!activeMenu.value || activeSubMenu.value || searchQuery.value) {
     return [];
@@ -1595,10 +1596,30 @@ const groupedCards = computed(() => {
   
   const groups = [];
   const subMenus = activeMenu.value.subMenus || [];
+  const currentCards = cards.value || [];
+  
+  // 创建子菜单ID到子菜单的映射
+  const subMenuMap = new Map();
+  subMenus.forEach(sub => subMenuMap.set(sub.id, sub));
+  
+  // 按子菜单ID分组卡片
+  const cardsBySubMenu = new Map();
+  cardsBySubMenu.set(null, []); // 主菜单下的卡片（没有子菜单的）
+  subMenus.forEach(sub => cardsBySubMenu.set(sub.id, []));
+  
+  // 将卡片分配到对应的分组
+    currentCards.forEach(card => {
+      const subMenuId = card.sub_menu_id || null;
+    if (cardsBySubMenu.has(subMenuId)) {
+      cardsBySubMenu.get(subMenuId).push(card);
+    } else {
+      // 如果子菜单不存在，放到主菜单下
+      cardsBySubMenu.get(null).push(card);
+    }
+  });
   
   // 1. 首先添加直接在主菜单下的卡片（没有子菜单的）
-  const mainCacheKey = getCardsCacheKey(activeMenu.value.id, null);
-  const mainCards = cardsCache.value[mainCacheKey] || [];
+  const mainCards = cardsBySubMenu.get(null) || [];
   if (mainCards.length > 0) {
     groups.push({
       key: 'main',
@@ -1610,8 +1631,7 @@ const groupedCards = computed(() => {
   
   // 2. 按子菜单顺序添加各子菜单的卡片
   for (const subMenu of subMenus) {
-    const subCacheKey = getCardsCacheKey(activeMenu.value.id, subMenu.id);
-    const subCards = cardsCache.value[subCacheKey] || [];
+    const subCards = cardsBySubMenu.get(subMenu.id) || [];
     if (subCards.length > 0) {
       groups.push({
         key: `sub_${subMenu.id}`,
@@ -3921,66 +3941,42 @@ async function saveCardEdit() {
     tagIds: cardEditForm.value.tagIds
   };
   
-  try {
-      // 1. 先调用API保存
-      await updateCard(cardId, {
-        ...editingCard.value,
-        ...updatedData
-      });
-      
-      // 2. API成功后再更新UI
-      const updatedTags = cardEditForm.value.tagIds.map(id => allTags.value.find(t => t.id === id)).filter(Boolean);
-      
-      const updatedCardData = {
-        ...updatedData,
-        tags: updatedTags
-      };
-      
-      // 更新 cards.value
-      const index = cards.value.findIndex(c => c.id === cardId);
-      if (index > -1) {
-        cards.value[index] = {
-          ...cards.value[index],
-          ...updatedCardData
-        };
-      }
-      
-      // 更新 allCards.value
-      const allIndex = allCards.value.findIndex(c => c.id === cardId);
-      if (allIndex > -1) {
-        allCards.value[allIndex] = {
-          ...allCards.value[allIndex],
-          ...updatedCardData
-        };
-      }
-      
-      // 更新 selectedCards.value
-      const selectedIndex = selectedCards.value.findIndex(c => c.id === cardId);
-      if (selectedIndex > -1) {
-        selectedCards.value[selectedIndex] = {
-          ...selectedCards.value[selectedIndex],
-          ...updatedCardData
-        };
-      }
-      
-        // 更新 cardsCache.value（关键：使用响应式方式更新，确保 groupedCards 重新计算）
-        const newCache = { ...cardsCache.value };
-        for (const key of Object.keys(newCache)) {
-          const cachedCards = newCache[key];
-          const cacheIndex = cachedCards.findIndex(c => c.id === cardId);
-          if (cacheIndex > -1) {
-            newCache[key] = cachedCards.map((c, idx) => 
-              idx === cacheIndex ? { ...c, ...updatedCardData } : c
-            );
-            break;
-          }
+    try {
+        // 1. 先调用API保存
+        await updateCard(cardId, {
+          ...editingCard.value,
+          ...updatedData
+        });
+        
+        // 2. API成功后，清除缓存并强制重新加载当前菜单的所有卡片
+        // 这是最可靠的方式，确保数据一致性
+        cardsCache.value = {};
+        localStorage.removeItem(CARDS_CACHE_KEY);
+        
+        // 强制重新加载卡片
+        await loadCards(true);
+        
+        // 更新 allCards（用于搜索）
+        const cardIndex = allCards.value.findIndex(c => c.id === cardId);
+        if (cardIndex > -1) {
+          const updatedTags = cardEditForm.value.tagIds.map(id => allTags.value.find(t => t.id === id)).filter(Boolean);
+          allCards.value = allCards.value.map(c => 
+            c.id === cardId ? { ...c, ...updatedData, tags: updatedTags } : c
+          );
         }
-        cardsCache.value = newCache;
-        saveCardsCache();
-      
-      showToastMessage('修改成功', 'success');
-      closeEditCardModal();
-    } catch (error) {
+        
+        // 更新 selectedCards
+        selectedCards.value = selectedCards.value.map(c => {
+          if (c.id === cardId) {
+            const updatedTags = cardEditForm.value.tagIds.map(id => allTags.value.find(t => t.id === id)).filter(Boolean);
+            return { ...c, ...updatedData, tags: updatedTags };
+          }
+          return c;
+        });
+        
+        showToastMessage('修改成功', 'success');
+        closeEditCardModal();
+      } catch (error) {
     console.error('保存卡片失败:', error);
     if (error.response?.status === 401) {
       closeEditCardModal();
