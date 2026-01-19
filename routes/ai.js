@@ -158,6 +158,9 @@ class BatchTaskManager extends EventEmitter {
     this.minConcurrency = 1;
     this.maxConcurrency = 5;
     this.initialConcurrency = 3;
+    // 限流重试配置
+    this.maxAutoRetries = 3;
+    this.rateLimitBaseDelay = 5000;
   }
 
   // 获取任务状态
@@ -175,10 +178,12 @@ class BatchTaskManager extends EventEmitter {
       currentCard: this.task.currentCard,
       startTime: this.task.startTime,
       concurrency: this.task.concurrency,
-        isRateLimited: this.task.isRateLimited,
-        errors: this.task.errors.slice(-100)
-      };
-    }
+      isRateLimited: this.task.isRateLimited,
+      retryQueueSize: this.task.retryQueue?.length || 0,
+      autoRetryRound: this.task.autoRetryRound || 0,
+      errors: this.task.errors.slice(-100)
+    };
+  }
 
   // 检查是否正在运行
   isRunning() {
@@ -212,7 +217,11 @@ class BatchTaskManager extends EventEmitter {
       concurrency: this.initialConcurrency,
       isRateLimited: false,
       consecutiveSuccesses: 0,
-      rateLimitCount: 0
+      rateLimitCount: 0,
+      // 自动重试队列
+      retryQueue: [],
+      autoRetryRound: 0,
+      processedCardIds: new Set()
     };
 
     this.emitUpdate();
@@ -248,7 +257,7 @@ class BatchTaskManager extends EventEmitter {
     return { stopped: true };
   }
 
-  // 执行任务（自适应并发）
+  // 执行任务（自适应并发 + 自动重试队列）
   async runTask(config, cards) {
     const { notifyDataChange } = require('../utils/autoBackup');
     const types = this.task?.types || ['name'];
@@ -259,131 +268,163 @@ class BatchTaskManager extends EventEmitter {
       const rawConfig = await db.getAIConfig();
       const baseDelay = Math.max(500, Math.min(10000, parseInt(rawConfig.requestDelay) || 1500));
 
-      let index = 0;
-      const totalCards = cards.length;
+      // 第一轮：处理所有卡片
+      await this.processBatch(config, cards, types, existingTags, strategy, baseDelay);
 
-      while (index < totalCards) {
-        // 检查是否被中止
-        if (this.abortController?.signal.aborted || !this.task?.running) {
-          break;
-        }
-
-        const currentConcurrency = this.task.concurrency;
-        const batch = cards.slice(index, index + currentConcurrency);
+      // 自动重试轮次：处理限流失败的卡片
+      while (
+        this.task?.retryQueue?.length > 0 && 
+        this.task.autoRetryRound < this.maxAutoRetries &&
+        this.task?.running &&
+        !this.abortController?.signal.aborted
+      ) {
+        this.task.autoRetryRound++;
+        const retryCards = [...this.task.retryQueue];
+        this.task.retryQueue = [];
         
-        // 更新当前处理信息
-        this.task.currentCard = batch.map(c => c.title || extractDomain(c.url)).join(', ');
+        // 重试前增加等待时间（指数退避）
+        const retryWaitTime = this.rateLimitBaseDelay * Math.pow(2, this.task.autoRetryRound - 1);
+        this.task.currentCard = `⏳ 限流等待中 (${Math.round(retryWaitTime/1000)}秒后重试 ${retryCards.length} 个)...`;
+        this.task.isRateLimited = true;
         this.emitUpdate();
-
-        // 并行处理当前批次
-        const results = await Promise.allSettled(
-          batch.map(card => this.processCardWithRetry(config, card, types, existingTags, strategy))
-        );
-
-        // 分析结果，调整并发策略
-        let batchSuccess = 0;
-        let batchFail = 0;
-        let hasRateLimit = false;
-
-        for (let i = 0; i < results.length; i++) {
-          const result = results[i];
-          const card = batch[i];
-          if (this.task) this.task.current++;
-
-          if (result.status === 'fulfilled') {
-            if (result.value.success) {
-              batchSuccess++;
-              if (this.task) {
-                this.task.successCount++;
-                // 如果有部分字段失败，记录警告（但仍算成功）
-                if (result.value.partialError) {
-                  this.task.errors.push({
-                    cardId: card.id,
-                    cardTitle: card.title || card.url,
-                    error: `部分成功: ${result.value.partialError}`,
-                    time: Date.now(),
-                    isWarning: true // 标记为警告而非错误
-                  });
-                }
-              }
-              notifyDataChange();
-            } else if (result.value.rateLimited) {
-              hasRateLimit = true;
-              batchFail++;
-              if (this.task) {
-                this.task.failCount++;
-                // 记录限流错误
-                this.task.errors.push({
-                  cardId: card.id,
-                  cardTitle: card.title || card.url,
-                  error: 'API 请求受限 (Rate Limit)，请稍后再试或降低并发数',
-                  time: Date.now()
-                });
-              }
-            } else {
-              batchFail++;
-              if (this.task) {
-                this.task.failCount++;
-                if (result.value.error) {
-                  this.task.errors.push({
-                    cardId: card.id,
-                    cardTitle: card.title || card.url,
-                    error: result.value.error,
-                    time: Date.now()
-                  });
-                }
-              }
-            }
-          } else {
-            batchFail++;
-            if (this.task) {
-              this.task.failCount++;
-              this.task.errors.push({
-                cardId: card.id,
-                cardTitle: card.title || card.url,
-                error: result.reason?.message || '未知错误',
-                time: Date.now()
-              });
-            }
-          }
-        }
-
-        // 自适应调整并发数
-        this.adjustConcurrency(batchSuccess, batchFail, hasRateLimit);
         
+        await this.sleep(retryWaitTime);
+        
+        if (!this.task?.running || this.abortController?.signal.aborted) break;
+        
+        // 重试时降低并发
+        this.task.concurrency = Math.max(1, Math.floor(this.task.concurrency / 2));
+        this.task.currentCard = `🔄 自动重试第 ${this.task.autoRetryRound} 轮 (${retryCards.length} 个)`;
+        this.task.isRateLimited = false;
         this.emitUpdate();
-
-        index += batch.length;
-
-        // 延迟处理
-        if (index < totalCards && this.task?.running) {
-          const delay = this.calculateDelay(baseDelay, hasRateLimit);
-          await this.sleep(delay);
-        }
+        
+        // 从错误列表中移除即将重试的卡片
+        const retryCardIds = new Set(retryCards.map(c => c.id));
+        this.task.errors = this.task.errors.filter(e => !retryCardIds.has(e.cardId) || e.isWarning);
+        // 重试的卡片失败计数减少
+        this.task.failCount = Math.max(0, this.task.failCount - retryCards.length);
+        
+        await this.processBatch(config, retryCards, types, existingTags, strategy, baseDelay * 2);
       }
+
     } catch (err) {
       console.error('runTask internal error:', err);
       if (this.task) {
         this.task.errors.push({ cardId: 0, cardTitle: '系统', error: err.message, time: Date.now() });
       }
-      } finally {
-        // 任务结束
-        if (this.task) {
-          // 增加一个极短的延迟确保前端能获取到最后的 100% 状态
-          await new Promise(r => setTimeout(r, 500));
-          this.task.running = false;
-          this.task.currentCard = '';
-          this.task.current = this.task.total;
-          this.emitUpdate();
-          
-          // 任务完全结束后，最后触发一次全局数据变更通知
-          try {
-            notifyDataChange();
-          } catch (e) {
-            console.warn('Final notifyDataChange failed:', e.message);
-          }
+    } finally {
+      // 任务结束
+      if (this.task) {
+        await new Promise(r => setTimeout(r, 500));
+        this.task.running = false;
+        this.task.currentCard = '';
+        this.emitUpdate();
+        
+        try {
+          notifyDataChange();
+        } catch (e) {
+          console.warn('Final notifyDataChange failed:', e.message);
         }
       }
+    }
+  }
+
+  // 处理一批卡片
+  async processBatch(config, cards, types, existingTags, strategy, baseDelay) {
+    const { notifyDataChange } = require('../utils/autoBackup');
+    let index = 0;
+    const totalCards = cards.length;
+
+    while (index < totalCards) {
+      if (this.abortController?.signal.aborted || !this.task?.running) {
+        break;
+      }
+
+      const currentConcurrency = this.task.concurrency;
+      const batch = cards.slice(index, index + currentConcurrency);
+      
+      this.task.currentCard = batch.map(c => c.title || extractDomain(c.url)).join(', ');
+      this.emitUpdate();
+
+      const results = await Promise.allSettled(
+        batch.map(card => this.processCardWithRetry(config, card, types, existingTags, strategy))
+      );
+
+      let batchSuccess = 0;
+      let batchFail = 0;
+      let hasRateLimit = false;
+
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        const card = batch[i];
+        
+        // 只有首次处理才增加 current
+        if (!this.task.processedCardIds.has(card.id)) {
+          this.task.current++;
+          this.task.processedCardIds.add(card.id);
+        }
+
+        if (result.status === 'fulfilled') {
+          if (result.value.success) {
+            batchSuccess++;
+            this.task.successCount++;
+            if (result.value.partialError) {
+              this.task.errors.push({
+                cardId: card.id,
+                cardTitle: card.title || card.url,
+                error: `部分成功: ${result.value.partialError}`,
+                time: Date.now(),
+                isWarning: true
+              });
+            }
+            notifyDataChange();
+          } else if (result.value.rateLimited) {
+            hasRateLimit = true;
+            batchFail++;
+            this.task.failCount++;
+            // 加入重试队列
+            if (!this.task.retryQueue.some(c => c.id === card.id)) {
+              this.task.retryQueue.push(card);
+            }
+            this.task.errors.push({
+              cardId: card.id,
+              cardTitle: card.title || card.url,
+              error: `API 请求受限，已加入自动重试队列 (第${this.task.autoRetryRound + 1}轮)`,
+              time: Date.now(),
+              isRateLimited: true
+            });
+          } else {
+            batchFail++;
+            this.task.failCount++;
+            this.task.errors.push({
+              cardId: card.id,
+              cardTitle: card.title || card.url,
+              error: result.value.error || '未知错误',
+              time: Date.now()
+            });
+          }
+        } else {
+          batchFail++;
+          this.task.failCount++;
+          this.task.errors.push({
+            cardId: card.id,
+            cardTitle: card.title || card.url,
+            error: result.reason?.message || '未知错误',
+            time: Date.now()
+          });
+        }
+      }
+
+      this.adjustConcurrency(batchSuccess, batchFail, hasRateLimit);
+      this.emitUpdate();
+
+      index += batch.length;
+
+      if (index < totalCards && this.task?.running) {
+        const delay = this.calculateDelay(baseDelay, hasRateLimit);
+        await this.sleep(delay);
+      }
+    }
   }
 
   // 自适应调整并发数

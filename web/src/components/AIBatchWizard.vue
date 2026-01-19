@@ -154,15 +154,25 @@
 
             <div v-if="taskRunning || taskDone" class="task-progress">
               <div class="progress-header">
-                <span>{{ taskDone ? '✅ 任务完成' : '⏳ 正在处理...' }}</span>
+                <span>{{ taskStatusText }}</span>
                 <span>{{ taskStatus.current }} / {{ taskStatus.total }}</span>
               </div>
-              <div class="progress-bar">
+              <div class="progress-bar" :class="{ 'rate-limited': taskStatus.isRateLimited }">
                 <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
               </div>
               <div class="progress-info">
-                <span v-if="taskStatus.currentCard && taskRunning">当前：{{ taskStatus.currentCard }}</span>
-                <span v-if="taskETA && taskRunning">预计剩余：{{ taskETA }}</span>
+                <span v-if="taskStatus.currentCard && taskRunning">{{ taskStatus.currentCard }}</span>
+                <span v-if="taskETA && taskRunning && !taskStatus.isRateLimited">预计剩余：{{ taskETA }}</span>
+              </div>
+
+              <!-- 限流/自动重试状态提示 -->
+              <div v-if="taskStatus.isRateLimited && taskRunning" class="rate-limit-notice">
+                <span class="rate-limit-icon">⏳</span>
+                <span>API 限流中，等待后将自动重试...</span>
+              </div>
+              <div v-if="taskStatus.retryQueueSize > 0 && taskRunning" class="retry-queue-notice">
+                <span class="retry-icon">🔄</span>
+                <span>{{ taskStatus.retryQueueSize }} 个卡片待自动重试 (第 {{ taskStatus.autoRetryRound + 1 }} 轮)</span>
               </div>
 
               <!-- 任务完成统计摘要 -->
@@ -188,11 +198,15 @@
                 <div class="summary-rate">
                   成功率：{{ successRate }}%
                 </div>
+                <div v-if="taskStatus.autoRetryRound > 0" class="auto-retry-summary">
+                  自动重试：{{ taskStatus.autoRetryRound }} 轮
+                </div>
               </div>
 
               <div v-if="!taskDone" class="task-stats">
                 <span class="stat success">✓ 成功 {{ taskStatus.successCount || 0 }}</span>
                 <span class="stat fail">✗ 失败 {{ taskStatus.failCount || 0 }}</span>
+                <span class="stat retry" v-if="taskStatus.retryQueueSize > 0">⏳ 待重试 {{ taskStatus.retryQueueSize }}</span>
               </div>
               
               <div v-if="taskDone && hasRealErrors" class="retry-actions">
@@ -335,21 +349,27 @@ export default {
     taskRunning() {
       return this.activeTask.running;
     },
+    taskStatusText() {
+      if (this.taskDone) return '✅ 任务完成';
+      if (this.taskStatus.isRateLimited) return '⏳ 限流等待中...';
+      if (this.taskStatus.autoRetryRound > 0) return `🔄 自动重试第 ${this.taskStatus.autoRetryRound} 轮`;
+      return '⏳ 正在处理...';
+    },
     progressPercent() {
       const s = this.taskStatus;
-      return s.total ? Math.round((s.current / s.total) * 100) : 0;
+      return s.total ? Math.min(100, Math.round((s.current / s.total) * 100)) : 0;
     },
     displayErrors() {
       return this.taskStatus.errors || [];
     },
     hasRealErrors() {
-      return this.displayErrors.some(e => !e.isWarning);
+      return this.displayErrors.some(e => !e.isWarning && !e.isRateLimited);
     },
     hasErrorsOrWarnings() {
       return this.displayErrors.length > 0;
     },
     realErrorCount() {
-      return this.displayErrors.filter(e => !e.isWarning).length;
+      return this.displayErrors.filter(e => !e.isWarning && !e.isRateLimited).length;
     },
     warningCount() {
       return this.displayErrors.filter(e => e.isWarning).length;
@@ -358,7 +378,7 @@ export default {
       const total = this.taskStatus.total || 0;
       const success = this.taskStatus.successCount || 0;
       if (total === 0) return 0;
-      return Math.round((success / total) * 100);
+      return Math.min(100, Math.round((success / total) * 100));
     },
     taskDuration() {
       const start = this.taskStatus.startTime || this.taskStartTime;
@@ -693,9 +713,18 @@ textarea.input { resize: vertical; }
 
 .task-progress { padding: 10px 0; }
 .progress-header { display: flex; justify-content: space-between; margin-bottom: 10px; font-weight: 500; }
-.progress-bar { height: 10px; background: #e5e7eb; border-radius: 5px; overflow: hidden; }
+.progress-bar { height: 10px; background: #e5e7eb; border-radius: 5px; overflow: hidden; transition: all 0.3s; }
+.progress-bar.rate-limited { background: #fef3c7; }
+.progress-bar.rate-limited .progress-fill { background: linear-gradient(90deg, #f59e0b, #d97706); animation: pulse 1.5s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
 .progress-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6); transition: width 0.3s; }
 .progress-info { display: flex; justify-content: space-between; margin-top: 8px; font-size: 13px; color: #6b7280; }
+
+.rate-limit-notice, .retry-queue-notice { display: flex; align-items: center; gap: 8px; padding: 10px 14px; margin-top: 12px; border-radius: 8px; font-size: 13px; }
+.rate-limit-notice { background: #fef3c7; color: #b45309; border: 1px solid #fcd34d; }
+.retry-queue-notice { background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; }
+.rate-limit-icon, .retry-icon { font-size: 16px; }
+.auto-retry-summary { margin-top: 8px; text-align: center; font-size: 12px; color: #6b7280; }
 
 .task-summary { margin-top: 16px; padding: 16px; background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border-radius: 12px; border: 1px solid #bae6fd; }
 .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; text-align: center; }
@@ -707,10 +736,11 @@ textarea.input { resize: vertical; }
 .summary-label { font-size: 12px; color: #6b7280; }
 .summary-rate { margin-top: 12px; text-align: center; font-size: 14px; color: #374151; font-weight: 500; }
 
-.task-stats { display: flex; align-items: center; gap: 16px; margin-top: 12px; }
+.task-stats { display: flex; align-items: center; gap: 16px; margin-top: 12px; flex-wrap: wrap; }
 .stat { font-size: 14px; }
 .stat.success { color: #10b981; }
 .stat.fail { color: #ef4444; }
+.stat.retry { color: #f59e0b; }
 
 .retry-actions { margin-top: 12px; text-align: center; }
 .retry-all-btn { margin-left: auto; }
