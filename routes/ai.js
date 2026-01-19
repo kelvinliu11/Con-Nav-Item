@@ -26,6 +26,7 @@ async function generateCardFields(config, card, types, existingTags, strategy = 
   let updated = false;
   const isFillMode = strategy.mode !== 'overwrite';
   const resultData = { name: null, description: null, tags: null };
+  const unchanged = {}; // 记录哪些字段生成成功但与原值相同
   const fieldErrors = []; // 记录各字段的错误
 
   // 1. 过滤出真正需要生成的字段
@@ -84,12 +85,15 @@ async function generateCardFields(config, card, types, existingTags, strategy = 
           throw new Error('AI 返回内容无效（可能是思考过程文本）');
         }
         if (cleaned !== card.title) {
-          await db.updateCardName(card.id, cleaned);
-          resultData.name = cleaned;
-          card.title = cleaned;
-          updated = true;
-        }
-      } else if (type === 'description') {
+            await db.updateCardName(card.id, cleaned);
+            resultData.name = cleaned;
+            card.title = cleaned;
+            updated = true;
+          } else {
+            unchanged.name = true;
+            resultData.name = cleaned;
+          }
+        } else if (type === 'description') {
         prompt = buildPromptWithStrategy(buildDescriptionPrompt(card), strategy);
         aiResponse = await callAI(config, prompt);
         cleaned = cleanDescription(aiResponse);
@@ -97,12 +101,15 @@ async function generateCardFields(config, card, types, existingTags, strategy = 
           throw new Error('AI 返回内容无效（可能是思考过程文本）');
         }
         if (cleaned !== card.desc) {
-          await db.updateCardDescription(card.id, cleaned);
-          resultData.description = cleaned;
-          card.desc = cleaned;
-          updated = true;
-        }
-      } else if (type === 'tags') {
+            await db.updateCardDescription(card.id, cleaned);
+            resultData.description = cleaned;
+            card.desc = cleaned;
+            updated = true;
+          } else {
+            unchanged.description = true;
+            resultData.description = cleaned;
+          }
+        } else if (type === 'tags') {
         prompt = buildPromptWithStrategy(buildTagsPrompt(card, existingTags), strategy);
         aiResponse = await callAI(config, prompt);
         const { tags, newTags } = parseTagsResponse(aiResponse, existingTags);
@@ -123,21 +130,22 @@ async function generateCardFields(config, card, types, existingTags, strategy = 
   }
 
   // 如果有部分字段失败，抛出包含详细信息的错误
-  if (fieldErrors.length > 0 && !updated) {
+  if (fieldErrors.length > 0 && !updated && Object.keys(unchanged).length === 0) {
     // 全部失败
     throw new Error(fieldErrors.map(e => `${e.field}: ${e.error}`).join('; '));
   }
   
   // 部分成功：返回结果，但附带警告信息
-  if (fieldErrors.length > 0 && updated) {
+  if (fieldErrors.length > 0 && (updated || Object.keys(unchanged).length > 0)) {
     return { 
       updated, 
-      data: resultData, 
+      data: resultData,
+      unchanged: Object.keys(unchanged).length > 0 ? unchanged : undefined,
       partialError: fieldErrors.map(e => `${e.field}失败`).join(', ')
     };
   }
 
-  return { updated, data: resultData };
+  return { updated, data: resultData, unchanged: Object.keys(unchanged).length > 0 ? unchanged : undefined };
 }
 
 // ==================== 自适应并发批量任务管理器 ====================
@@ -1745,9 +1753,9 @@ router.post('/generate', authMiddleware, async (req, res) => {
     if (!validation.valid) return res.status(400).json({ success: false, message: validation.message });
     
     const types = type === 'all' ? ['name', 'description', 'tags'] : type === 'both' ? ['name', 'description'] : [type];
-    const { updated, data } = await generateCardFields(config, card, types, existingTags || [], { mode: 'overwrite' });
+    const { updated, data, unchanged } = await generateCardFields(config, card, types, existingTags || [], { mode: 'overwrite' });
     
-    res.json({ success: true, ...data });
+    res.json({ success: true, ...data, unchanged });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

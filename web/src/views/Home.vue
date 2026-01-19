@@ -564,7 +564,7 @@
     </footer>
 
     <!-- 权限验证弹窗 -->
-    <div v-if="showPasswordModal" class="modal-overlay" @click="closePasswordModal">
+    <div v-if="showPasswordModal" class="modal-overlay auth-modal-overlay" @click="closePasswordModal">
       <div class="modal-content" @click.stop>
         <div class="modal-header">
           <h3>验证密码</h3>
@@ -3758,11 +3758,15 @@ async function generateAIName() {
     });
     
     if (res.data.success && res.data.name) {
-      cardEditForm.value.title = res.data.name;
-      showToastMessage('名称生成成功', 'success');
-    } else {
-      showToastMessage(res.data.message || 'AI 生成失败', 'error');
-    }
+        if (res.data.unchanged?.name) {
+          showToastMessage('生成结果与当前相同，无需更新', 'info');
+        } else {
+          cardEditForm.value.title = res.data.name;
+          showToastMessage('名称生成成功', 'success');
+        }
+      } else {
+        showToastMessage(res.data.message || 'AI 生成失败', 'error');
+      }
   } catch (err) {
     if (err.response?.status === 401) {
       localStorage.removeItem('token');
@@ -3796,11 +3800,15 @@ async function generateAIDescription() {
     });
     
     if (res.data.success && res.data.description) {
-      cardEditForm.value.desc = res.data.description;
-      showToastMessage('描述生成成功', 'success');
-    } else {
-      showToastMessage(res.data.message || 'AI 生成失败', 'error');
-    }
+        if (res.data.unchanged?.description) {
+          showToastMessage('生成结果与当前相同，无需更新', 'info');
+        } else {
+          cardEditForm.value.desc = res.data.description;
+          showToastMessage('描述生成成功', 'success');
+        }
+      } else {
+        showToastMessage(res.data.message || 'AI 生成失败', 'error');
+      }
   } catch (err) {
     if (err.response?.status === 401) {
       localStorage.removeItem('token');
@@ -6739,7 +6747,7 @@ async function saveCardEdit() {
   border-radius: 8px;
   font-size: 14px;
   font-weight: 500;
-  z-index: 10000;
+  z-index: 10020;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   backdrop-filter: blur(10px);
   pointer-events: none;
@@ -7203,13 +7211,18 @@ async function saveCardEdit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10000;
+  z-index: 10002;
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   padding: 20px;
   box-sizing: border-box;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+/* 权限验证弹窗需要更高的 z-index，确保在其他弹窗之上 */
+.modal-overlay.auth-modal-overlay {
+  z-index: 10010;
 }
 
 .modal-content {
