@@ -50,3 +50,13 @@ config/.webdav-config.json
 
 # Package lock conflicts
 package-lock.json.orig
+# Temporary check files
+temp_check.txt
+*.tmp
+
+# Package manager lock files (choose one)
+bun.lock
+web/bun.lock
+
+# Crypto secrets
+config/.crypto-secret

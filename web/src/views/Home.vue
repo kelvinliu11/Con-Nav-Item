@@ -3922,45 +3922,64 @@ async function saveCardEdit() {
   };
   
   try {
-    // 1. 先调用API保存
-    await updateCard(cardId, {
-      ...editingCard.value,
-      ...updatedData
-    });
-    
-    // 2. API成功后再更新UI
-    const updatedTags = cardEditForm.value.tagIds.map(id => allTags.value.find(t => t.id === id)).filter(Boolean);
-    
-    const index = cards.value.findIndex(c => c.id === cardId);
-    if (index > -1) {
-      cards.value[index] = {
-        ...cards.value[index],
+      // 1. 先调用API保存
+      await updateCard(cardId, {
+        ...editingCard.value,
+        ...updatedData
+      });
+      
+      // 2. API成功后再更新UI
+      const updatedTags = cardEditForm.value.tagIds.map(id => allTags.value.find(t => t.id === id)).filter(Boolean);
+      
+      const updatedCardData = {
         ...updatedData,
         tags: updatedTags
       };
-    }
-    
-    const allIndex = allCards.value.findIndex(c => c.id === cardId);
-    if (allIndex > -1) {
-      allCards.value[allIndex] = {
-        ...allCards.value[allIndex],
-        ...updatedData,
-        tags: updatedTags
-      };
-    }
-    
-    const selectedIndex = selectedCards.value.findIndex(c => c.id === cardId);
-    if (selectedIndex > -1) {
-      selectedCards.value[selectedIndex] = {
-        ...selectedCards.value[selectedIndex],
-        ...updatedData,
-        tags: updatedTags
-      };
-    }
-    
-    showToastMessage('修改成功', 'success');
-    closeEditCardModal();
-  } catch (error) {
+      
+      // 更新 cards.value
+      const index = cards.value.findIndex(c => c.id === cardId);
+      if (index > -1) {
+        cards.value[index] = {
+          ...cards.value[index],
+          ...updatedCardData
+        };
+      }
+      
+      // 更新 allCards.value
+      const allIndex = allCards.value.findIndex(c => c.id === cardId);
+      if (allIndex > -1) {
+        allCards.value[allIndex] = {
+          ...allCards.value[allIndex],
+          ...updatedCardData
+        };
+      }
+      
+      // 更新 selectedCards.value
+      const selectedIndex = selectedCards.value.findIndex(c => c.id === cardId);
+      if (selectedIndex > -1) {
+        selectedCards.value[selectedIndex] = {
+          ...selectedCards.value[selectedIndex],
+          ...updatedCardData
+        };
+      }
+      
+      // 更新 cardsCache.value（关键：同步更新缓存，避免分组显示时数据丢失）
+      for (const key of Object.keys(cardsCache.value)) {
+        const cachedCards = cardsCache.value[key];
+        const cacheIndex = cachedCards.findIndex(c => c.id === cardId);
+        if (cacheIndex > -1) {
+          cachedCards[cacheIndex] = {
+            ...cachedCards[cacheIndex],
+            ...updatedCardData
+          };
+          break;
+        }
+      }
+      saveCardsCache();
+      
+      showToastMessage('修改成功', 'success');
+      closeEditCardModal();
+    } catch (error) {
     console.error('保存卡片失败:', error);
     if (error.response?.status === 401) {
       closeEditCardModal();

@@ -17,7 +17,8 @@
     "start:https": "node start-with-https.js",
     "build": "npm run build --prefix web",
     "web:dev": "npm run dev --prefix web",
-    "install:all": "npm install && npm install --prefix web"
+    "install:all": "npm install && npm install --prefix web",
+    "check-password": "node scripts/check-password.js"
   },
   "dependencies": {
     "adm-zip": "^0.5.16",
