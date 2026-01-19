@@ -1,10 +1,10 @@
 <template>
-  <div class="wizard-overlay" v-if="visible" @click.self="$emit('close')">
+  <div class="wizard-overlay" v-if="visible" @click.self="handleOverlayClick">
     <div class="wizard-modal">
       <!-- 头部 -->
       <div class="wizard-header">
         <h3>🤖 AI 批量生成向导</h3>
-        <button class="close-btn" @click="$emit('close')">✕</button>
+        <button class="close-btn" @click="handleClose">✕</button>
       </div>
 
       <!-- 步骤指示器 -->
@@ -15,44 +15,59 @@
         </div>
       </div>
 
-      <!-- 步骤内容 -->
-      <div class="wizard-body">
-        <!-- 第一步：筛选 -->
-        <div v-if="step === 0" class="step-content">
-          <div class="filter-section">
-            <h4>状态筛选</h4>
-            <div class="checkbox-group">
-              <label><input type="checkbox" v-model="filters.status" value="empty_name" @change="applyFilter" /> 缺名称</label>
-              <label><input type="checkbox" v-model="filters.status" value="empty_desc" @change="applyFilter" /> 缺描述</label>
-              <label><input type="checkbox" v-model="filters.status" value="empty_tags" @change="applyFilter" /> 缺标签</label>
+        <!-- 步骤内容 -->
+        <div class="wizard-body">
+          <!-- 第一步：筛选 -->
+          <div v-if="step === 0" class="step-content">
+            <div class="filter-section">
+              <h4>状态筛选</h4>
+              <div class="checkbox-group">
+                <label><input type="checkbox" v-model="filters.status" value="empty_name" @change="applyFilter" /> 缺名称</label>
+                <label><input type="checkbox" v-model="filters.status" value="empty_desc" @change="applyFilter" /> 缺描述</label>
+                <label><input type="checkbox" v-model="filters.status" value="empty_tags" @change="applyFilter" /> 缺标签</label>
+              </div>
+            </div>
+
+            <div class="filter-section">
+              <h4>菜单筛选</h4>
+              <select v-model="filters.menuId" @change="onMenuChange" class="input">
+                <option value="">全部菜单</option>
+                <option v-for="m in menus" :key="m.id" :value="m.id">{{ m.name }}</option>
+              </select>
+              <select v-if="subMenus.length" v-model="filters.subMenuId" @change="applyFilter" class="input" style="margin-top:8px">
+                <option value="">全部子菜单</option>
+                <option v-for="s in subMenus" :key="s.id" :value="s.id">{{ s.name }}</option>
+              </select>
+            </div>
+
+            <div class="filter-section" v-if="tags.length">
+              <h4>标签筛选 <span class="hint">(可选)</span></h4>
+              <div class="tag-filter-group">
+                <div class="tag-filter-row">
+                  <span class="tag-filter-label">包含标签：</span>
+                  <div class="tag-select-list">
+                    <label v-for="t in tags.slice(0, 20)" :key="t.id" class="tag-checkbox">
+                      <input type="checkbox" :value="t.id" v-model="filters.tagIds" @change="applyFilter" />
+                      <span class="tag-name" :style="{ background: t.color || '#e5e7eb' }">{{ t.name }}</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="filter-result">
+              <span class="result-count">已选中 <strong>{{ filteredCards.length }}</strong> 个卡片</span>
+              <button class="btn sm" @click="applyFilter" :disabled="filtering">{{ filtering ? '筛选中...' : '🔄 刷新' }}</button>
+            </div>
+
+            <div class="card-preview-list" v-if="filteredCards.length">
+              <div v-for="card in filteredCards.slice(0, 10)" :key="card.id" class="card-preview-item">
+                <span class="card-title">{{ card.title || extractDomain(card.url) }}</span>
+                <span class="card-url">{{ card.url }}</span>
+              </div>
+              <div v-if="filteredCards.length > 10" class="more-hint">还有 {{ filteredCards.length - 10 }} 个...</div>
             </div>
           </div>
-
-          <div class="filter-section">
-            <h4>菜单筛选</h4>
-            <select v-model="filters.menuId" @change="onMenuChange" class="input">
-              <option value="">全部菜单</option>
-              <option v-for="m in menus" :key="m.id" :value="m.id">{{ m.name }}</option>
-            </select>
-            <select v-if="subMenus.length" v-model="filters.subMenuId" @change="applyFilter" class="input" style="margin-top:8px">
-              <option value="">全部子菜单</option>
-              <option v-for="s in subMenus" :key="s.id" :value="s.id">{{ s.name }}</option>
-            </select>
-          </div>
-
-          <div class="filter-result">
-            <span class="result-count">已选中 <strong>{{ filteredCards.length }}</strong> 个卡片</span>
-            <button class="btn sm" @click="applyFilter" :disabled="filtering">{{ filtering ? '筛选中...' : '🔄 刷新' }}</button>
-          </div>
-
-          <div class="card-preview-list" v-if="filteredCards.length">
-            <div v-for="card in filteredCards.slice(0, 10)" :key="card.id" class="card-preview-item">
-              <span class="card-title">{{ card.title || extractDomain(card.url) }}</span>
-              <span class="card-url">{{ card.url }}</span>
-            </div>
-            <div v-if="filteredCards.length > 10" class="more-hint">还有 {{ filteredCards.length - 10 }} 个...</div>
-          </div>
-        </div>
 
         <!-- 第二步：策略 -->
         <div v-if="step === 1" class="step-content">
@@ -93,8 +108,17 @@
         <!-- 第三步：预览 -->
         <div v-if="step === 2" class="step-content">
           <div class="preview-actions">
-            <button class="btn primary" @click="runPreview" :disabled="previewing">
-              {{ previewing ? '⏳ 生成预览中...' : '🔮 试运行（随机3个）' }}
+            <div class="preview-count-selector">
+              <label>预览数量：</label>
+              <select v-model="previewCount" class="input sm" :disabled="previewing">
+                <option :value="1">1 个</option>
+                <option :value="3">3 个</option>
+                <option :value="5">5 个</option>
+                <option :value="Math.min(10, filteredCards.length)">{{ Math.min(10, filteredCards.length) }} 个</option>
+              </select>
+            </div>
+            <button class="btn primary" @click="runPreview" :disabled="previewing || filteredCards.length === 0">
+              {{ previewing ? `⏳ 生成中 (${previewProgress}/${previewCount})...` : '🔮 试运行预览' }}
             </button>
           </div>
 
@@ -113,7 +137,7 @@
           </div>
 
           <div v-else-if="!previewing" class="preview-hint">
-            点击"试运行"预览 AI 生成效果，不满意可返回调整策略
+            点击"试运行预览"查看 AI 生成效果，不满意可返回调整策略
           </div>
         </div>
 
@@ -137,15 +161,43 @@
                 <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
               </div>
               <div class="progress-info">
-                <span v-if="taskStatus.currentCard">当前：{{ taskStatus.currentCard }}</span>
-                <span v-if="taskStatus.eta">预计剩余：{{ taskStatus.eta }}</span>
+                <span v-if="taskStatus.currentCard && taskRunning">当前：{{ taskStatus.currentCard }}</span>
+                <span v-if="taskETA && taskRunning">预计剩余：{{ taskETA }}</span>
               </div>
 
-              <div class="task-stats">
+              <!-- 任务完成统计摘要 -->
+              <div v-if="taskDone" class="task-summary">
+                <div class="summary-grid">
+                  <div class="summary-item">
+                    <span class="summary-value success">{{ taskStatus.successCount || 0 }}</span>
+                    <span class="summary-label">成功</span>
+                  </div>
+                  <div class="summary-item">
+                    <span class="summary-value fail">{{ realErrorCount }}</span>
+                    <span class="summary-label">失败</span>
+                  </div>
+                  <div class="summary-item">
+                    <span class="summary-value warning">{{ warningCount }}</span>
+                    <span class="summary-label">警告</span>
+                  </div>
+                  <div class="summary-item">
+                    <span class="summary-value">{{ taskDuration }}</span>
+                    <span class="summary-label">用时</span>
+                  </div>
+                </div>
+                <div class="summary-rate">
+                  成功率：{{ successRate }}%
+                </div>
+              </div>
+
+              <div v-if="!taskDone" class="task-stats">
                 <span class="stat success">✓ 成功 {{ taskStatus.successCount || 0 }}</span>
                 <span class="stat fail">✗ 失败 {{ taskStatus.failCount || 0 }}</span>
-                <button v-if="taskDone && hasRealErrors" class="btn sm outline retry-all-btn" @click="retryAllFailed" :disabled="starting || taskRunning">
-                  🔄 重试全部失败
+              </div>
+              
+              <div v-if="taskDone && hasRealErrors" class="retry-actions">
+                <button class="btn sm outline retry-all-btn" @click="retryAllFailed" :disabled="starting || taskRunning">
+                  🔄 重试全部失败 ({{ realErrorCount }})
                 </button>
               </div>
 
@@ -193,7 +245,7 @@
 
       <!-- 底部按钮 -->
       <div class="wizard-footer">
-        <button class="btn" @click="$emit('close')" :disabled="taskRunning">取消</button>
+        <button class="btn" @click="handleClose">{{ taskRunning ? '后台运行' : '取消' }}</button>
         <div class="footer-right">
           <button class="btn" v-if="step > 0 && !taskRunning" @click="step--">上一步</button>
           <button class="btn primary" v-if="step < 3" @click="nextStep" :disabled="!canNext">
@@ -224,61 +276,62 @@ export default {
       menus: [],
       subMenus: [],
       tags: [],
-      filters: { status: ['empty_name', 'empty_desc'], menuId: '', subMenuId: '' },
+      filters: { status: ['empty_name', 'empty_desc'], menuId: '', subMenuId: '', tagIds: [] },
       filteredCards: [],
       filtering: false,
       strategy: { types: ['name', 'description'], mode: 'fill', style: 'default', customPrompt: '' },
       previews: [],
       previewing: false,
+      previewCount: 3,
+      previewProgress: 0,
       taskDone: false,
+      taskStartTime: null,
+      taskEndTime: null,
       localTaskStatus: { current: 0, total: 0, successCount: 0, failCount: 0, currentCard: '', errors: [] },
-      // 用于保存重试前的失败记录和统计，避免被 SSE 覆盖
       pendingRetryErrors: [],
-      pendingSuccessCount: 0,  // 重试前已成功的数量
+      pendingSuccessCount: 0,
+      retrySuccessIds: new Set(),
+      lastRetryCardId: null,
       isRetrying: false,
       starting: false,
       stopping: false,
       eventSource: null
     };
   },
-  computed: {
-    canNext() {
-      if (this.step === 0) return this.filteredCards.length > 0;
-      if (this.step === 1) return this.strategy.types.length > 0;
-      return true;
-    },
-    taskStatus() {
-      // 优先使用父组件传递的任务状态，否则使用本地状态（用于非运行状态下的最后一次快照）
-      const baseStatus = this.activeTask.running ? this.activeTask : this.localTaskStatus;
-      
-      // 如果正在重试模式，需要累加之前的成功数
-      if (this.isRetrying) {
-        const currentErrors = baseStatus.errors || [];
+    computed: {
+      canNext() {
+        if (this.step === 0) return this.filteredCards.length > 0;
+        if (this.step === 1) return this.strategy.types.length > 0;
+        return true;
+      },
+      taskStatus() {
+        const baseStatus = this.activeTask.running ? this.activeTask : this.localTaskStatus;
         
-        if (this.pendingRetryErrors.length > 0) {
-          // 重试单个卡片：合并保留的错误记录
-          const retryingIds = new Set(currentErrors.map(e => e.cardId));
+        if (this.isRetrying && this.pendingRetryErrors.length > 0) {
+          const currentErrors = baseStatus.errors || [];
+          const currentRetryingIds = new Set(currentErrors.map(e => e.cardId));
+          const currentSuccessIds = this.retrySuccessIds || new Set();
+          
           const mergedErrors = [
             ...currentErrors,
-            ...this.pendingRetryErrors.filter(e => !retryingIds.has(e.cardId))
+            ...this.pendingRetryErrors.filter(e => 
+              !currentRetryingIds.has(e.cardId) && !currentSuccessIds.has(e.cardId)
+            )
           ];
+          
+          const realFailCount = mergedErrors.filter(e => !e.isWarning).length;
+          
           return {
             ...baseStatus,
             errors: mergedErrors,
-            failCount: mergedErrors.length,
-            successCount: this.pendingSuccessCount + (baseStatus.successCount || 0)
-          };
-        } else {
-          // 重试全部失败：只累加成功数
-          return {
-            ...baseStatus,
-            successCount: this.pendingSuccessCount + (baseStatus.successCount || 0)
+            failCount: realFailCount,
+            successCount: this.pendingSuccessCount + (baseStatus.successCount || 0),
+            total: this.pendingRetryErrors.length + (baseStatus.total || 0)
           };
         }
-      }
-      
-      return baseStatus;
-    },
+        
+        return baseStatus;
+      },
     taskRunning() {
       return this.activeTask.running;
     },
@@ -286,49 +339,104 @@ export default {
       const s = this.taskStatus;
       return s.total ? Math.round((s.current / s.total) * 100) : 0;
     },
-    // 所有错误和警告
     displayErrors() {
       return this.taskStatus.errors || [];
     },
-    // 是否有真正的错误（非警告）
     hasRealErrors() {
       return this.displayErrors.some(e => !e.isWarning);
     },
-    // 是否有错误或警告需要显示
     hasErrorsOrWarnings() {
       return this.displayErrors.length > 0;
+    },
+    realErrorCount() {
+      return this.displayErrors.filter(e => !e.isWarning).length;
+    },
+    warningCount() {
+      return this.displayErrors.filter(e => e.isWarning).length;
+    },
+    successRate() {
+      const total = this.taskStatus.total || 0;
+      const success = this.taskStatus.successCount || 0;
+      if (total === 0) return 0;
+      return Math.round((success / total) * 100);
+    },
+    taskDuration() {
+      const start = this.taskStatus.startTime || this.taskStartTime;
+      if (!start) return '-';
+      const end = this.taskEndTime || Date.now();
+      const seconds = Math.round((end - start) / 1000);
+      if (seconds < 60) return `${seconds}秒`;
+      const minutes = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${minutes}分${secs}秒`;
+    },
+    taskETA() {
+      if (!this.taskRunning || !this.taskStatus.startTime) return '';
+      const current = this.taskStatus.current || 0;
+      const total = this.taskStatus.total || 0;
+      if (current === 0 || total === 0) return '';
+      const elapsed = Date.now() - this.taskStatus.startTime;
+      const avgPerItem = elapsed / current;
+      const remaining = (total - current) * avgPerItem;
+      const seconds = Math.round(remaining / 1000);
+      if (seconds < 60) return `${seconds}秒`;
+      const minutes = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${minutes}分${secs}秒`;
     }
   },
-  watch: {
-    visible(v) {
-      if (v) this.init();
-    },
-    'activeTask.running'(newVal, oldVal) {
-      // 当任务开始时，重置完成状态
-      if (newVal === true) {
-        this.taskDone = false;
-      }
-      // 当任务从运行中变为停止，且当前在执行步骤时，标记为完成
-      if (oldVal === true && newVal === false && this.step === 3) {
-        this.taskDone = true;
-        // 任务完成后清理重试状态
-        this.isRetrying = false;
-        this.pendingRetryErrors = [];
-        this.pendingSuccessCount = 0;
-        // 任务完成后刷新筛选结果，确保重试时使用最新数据
-        this.applyFilter();
-      }
-    },
-    // 实时同步任务状态到本地，用于任务结束后的显示
-    activeTask: {
-      handler(val) {
-        if (val) {
-          this.localTaskStatus = { ...val };
+    watch: {
+      visible(v) {
+        if (v) this.init();
+      },
+      'activeTask.running'(newVal, oldVal) {
+        if (newVal === true) {
+          this.taskDone = false;
+          this.taskStartTime = Date.now();
+          this.taskEndTime = null;
+        }
+        if (oldVal === true && newVal === false && this.step === 3) {
+          this.taskDone = true;
+          this.taskEndTime = Date.now();
+          
+          if (this.isRetrying && this.pendingRetryErrors.length > 0) {
+            const currentErrors = this.activeTask.errors || [];
+            const failedIds = new Set(currentErrors.map(e => e.cardId));
+            this.pendingRetryErrors = this.pendingRetryErrors.filter(e => failedIds.has(e.cardId) || !this.retrySuccessIds.has(e.cardId));
+            
+            if (this.activeTask.successCount > 0) {
+              const retriedIds = [...this.retrySuccessIds];
+              this.pendingRetryErrors = this.pendingRetryErrors.filter(e => !retriedIds.includes(e.cardId));
+            }
+          }
+          
+          if (this.pendingRetryErrors.length === 0) {
+            this.isRetrying = false;
+            this.pendingSuccessCount = 0;
+            this.retrySuccessIds = new Set();
+          }
+          
+          this.applyFilter();
         }
       },
-      deep: true
-    }
-  },
+      'activeTask.successCount'(newVal, oldVal) {
+        if (this.isRetrying && newVal > (oldVal || 0) && this.activeTask.currentCard) {
+          const successCardId = this.lastRetryCardId;
+          if (successCardId) {
+            this.retrySuccessIds.add(successCardId);
+            this.pendingRetryErrors = this.pendingRetryErrors.filter(e => e.cardId !== successCardId);
+          }
+        }
+      },
+      activeTask: {
+        handler(val) {
+          if (val) {
+            this.localTaskStatus = { ...val };
+          }
+        },
+        deep: true
+      }
+    },
   methods: {
     async init() {
       this.step = 0;
@@ -337,6 +445,8 @@ export default {
       this.localTaskStatus = { current: 0, total: 0, successCount: 0, failCount: 0, currentCard: '', errors: [] };
       this.pendingRetryErrors = [];
       this.pendingSuccessCount = 0;
+      this.retrySuccessIds = new Set();
+      this.lastRetryCardId = null;
       this.isRetrying = false;
 
       try {
@@ -358,6 +468,7 @@ export default {
         const params = { status: this.filters.status };
         if (this.filters.menuId) params.menuIds = [this.filters.menuId];
         if (this.filters.subMenuId) params.subMenuIds = [this.filters.subMenuId];
+        if (this.filters.tagIds?.length) params.tagIds = this.filters.tagIds;
         const { data } = await aiFilterCards(params);
         this.filteredCards = data.cards || [];
       } catch { this.filteredCards = []; }
@@ -369,40 +480,46 @@ export default {
     async runPreview() {
       this.previewing = true;
       this.previews = [];
+      this.previewProgress = 0;
       try {
-        const sampleIds = this.filteredCards.slice(0, 3).map(c => c.id);
+        const count = Math.min(this.previewCount, this.filteredCards.length);
+        const shuffled = [...this.filteredCards].sort(() => Math.random() - 0.5);
+        const sampleIds = shuffled.slice(0, count).map(c => c.id);
+        this.previewProgress = 1;
         const { data } = await aiPreview({
           cardIds: sampleIds,
           types: this.strategy.types,
           strategy: { mode: this.strategy.mode, style: this.strategy.style, customPrompt: this.strategy.customPrompt }
         });
         this.previews = data.previews || [];
+        this.previewProgress = count;
       } catch (e) {
         alert('预览失败: ' + (e.response?.data?.message || e.message));
       }
       this.previewing = false;
     },
     async startTask() {
-      // 启动全新任务时，清理重试状态
       this.pendingRetryErrors = [];
       this.pendingSuccessCount = 0;
+      this.retrySuccessIds = new Set();
+      this.lastRetryCardId = null;
       this.isRetrying = false;
       await this.doStartTask(this.filteredCards.map(c => c.id));
     },
-    async retryCard(errItem) {
-      if (!errItem.cardId) {
-        alert('无法重试：该错误没有关联的卡片 ID');
-        return;
-      }
-      
-      // 保存当前所有错误记录（排除要重试的卡片）和成功数
-      const cardIdToRetry = errItem.cardId;
-      this.pendingRetryErrors = (this.taskStatus.errors || []).filter(e => e.cardId !== cardIdToRetry);
-      this.pendingSuccessCount = this.taskStatus.successCount || 0;
-      this.isRetrying = true;
-      
-      await this.doStartTask([cardIdToRetry]);
-    },
+      async retryCard(errItem) {
+        if (!errItem.cardId) {
+          alert('无法重试：该错误没有关联的卡片 ID');
+          return;
+        }
+        
+        const cardIdToRetry = errItem.cardId;
+        this.lastRetryCardId = cardIdToRetry;
+        this.pendingRetryErrors = (this.taskStatus.errors || []).filter(e => e.cardId !== cardIdToRetry);
+        this.pendingSuccessCount = this.taskStatus.successCount || 0;
+        this.isRetrying = true;
+        
+        await this.doStartTask([cardIdToRetry]);
+      },
     async retryAllFailed() {
       // 只获取真正失败的卡片（排除警告）
       const realErrors = (this.taskStatus.errors || []).filter(e => !e.isWarning);
@@ -481,13 +598,30 @@ export default {
       }
       return value;
     },
-    formatTime(timestamp) {
-      if (!timestamp) return '';
-      const date = new Date(timestamp);
-      return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
+      formatTime(timestamp) {
+        if (!timestamp) return '';
+        const date = new Date(timestamp);
+        return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
+      },
+      handleClose() {
+        if (this.taskRunning) {
+          this.$emit('close');
+        } else if (this.previewing) {
+          if (confirm('预览正在生成中，确定要取消吗？')) {
+            this.$emit('close');
+          }
+        } else {
+          this.$emit('close');
+        }
+      },
+      handleOverlayClick() {
+        if (this.taskRunning) {
+          return;
+        }
+        this.handleClose();
+      }
     }
-  }
-};
+  };
 </script>
 
 <style scoped>
@@ -512,6 +646,7 @@ export default {
 .checkbox-group, .radio-group { display: flex; flex-wrap: wrap; gap: 12px; }
 .checkbox-group label, .radio-group label { display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
 .input { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }
+.input.sm { width: auto; padding: 6px 10px; font-size: 13px; }
 .input:focus { outline: none; border-color: #3b82f6; }
 textarea.input { resize: vertical; }
 
@@ -526,7 +661,20 @@ textarea.input { resize: vertical; }
 .card-url { color: #9ca3af; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .more-hint { padding: 8px 12px; text-align: center; color: #6b7280; font-size: 13px; background: #f9fafb; }
 
-.preview-actions { text-align: center; }
+.filter-section h4 .hint { font-weight: normal; color: #9ca3af; font-size: 12px; }
+.tag-filter-group { margin-top: 8px; }
+.tag-filter-row { display: flex; align-items: flex-start; gap: 8px; }
+.tag-filter-label { font-size: 13px; color: #6b7280; min-width: 70px; padding-top: 4px; }
+.tag-select-list { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+.tag-checkbox { display: flex; align-items: center; cursor: pointer; }
+.tag-checkbox input { display: none; }
+.tag-checkbox .tag-name { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; color: #374151; border: 1px solid transparent; transition: all 0.15s; }
+.tag-checkbox input:checked + .tag-name { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
+.tag-checkbox:hover .tag-name { opacity: 0.8; }
+
+.preview-actions { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; }
+.preview-count-selector { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.preview-count-selector label { color: #6b7280; }
 .preview-hint { text-align: center; color: #6b7280; padding: 40px 20px; }
 .preview-list { display: flex; flex-direction: column; gap: 12px; }
 .preview-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; }
@@ -549,10 +697,22 @@ textarea.input { resize: vertical; }
 .progress-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6); transition: width 0.3s; }
 .progress-info { display: flex; justify-content: space-between; margin-top: 8px; font-size: 13px; color: #6b7280; }
 
+.task-summary { margin-top: 16px; padding: 16px; background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border-radius: 12px; border: 1px solid #bae6fd; }
+.summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; text-align: center; }
+.summary-item { display: flex; flex-direction: column; gap: 4px; }
+.summary-value { font-size: 24px; font-weight: 700; color: #374151; }
+.summary-value.success { color: #10b981; }
+.summary-value.fail { color: #ef4444; }
+.summary-value.warning { color: #f59e0b; }
+.summary-label { font-size: 12px; color: #6b7280; }
+.summary-rate { margin-top: 12px; text-align: center; font-size: 14px; color: #374151; font-weight: 500; }
+
 .task-stats { display: flex; align-items: center; gap: 16px; margin-top: 12px; }
 .stat { font-size: 14px; }
 .stat.success { color: #10b981; }
 .stat.fail { color: #ef4444; }
+
+.retry-actions { margin-top: 12px; text-align: center; }
 .retry-all-btn { margin-left: auto; }
 
 .error-empty-hint { padding: 20px; text-align: center; color: #9ca3af; font-size: 13px; font-style: italic; background: #fff; }
