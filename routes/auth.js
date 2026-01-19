@@ -107,6 +107,41 @@ router.post('/verify-password', loginLimiter, (req, res) => {
   });
 });
 
+// 验证Token是否有效（前端使用）
+router.get('/verify-token', (req, res) => {
+  const auth = req.headers.authorization;
+  
+  if (!auth || !auth.startsWith('Bearer ')) {
+    return res.status(401).json({ valid: false, message: '未提供Token' });
+  }
+  
+  const token = auth.slice(7);
+  
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    
+    db.get('SELECT token_version FROM users WHERE id = ?', [payload.id], (err, user) => {
+      if (err || !user) {
+        return res.status(401).json({ valid: false, message: '用户不存在' });
+      }
+      
+      const currentVersion = parseInt(user.token_version, 10) || 1;
+      const tokenVersion = parseInt(payload.tokenVersion, 10) || 1;
+      
+      if (tokenVersion !== currentVersion) {
+        return res.status(401).json({ valid: false, message: '密码已更改，Token已失效' });
+      }
+      
+      res.json({ valid: true });
+    });
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ valid: false, message: 'Token已过期' });
+    }
+    return res.status(401).json({ valid: false, message: 'Token无效' });
+  }
+});
+
 // ==================== 扩展专用Token认证 ====================
 
 // 扩展登录 - 生成长期Token（用于自动备份等功能）

@@ -3,6 +3,7 @@ const BASE = '/api';
 
 export const login = (username, password) => axios.post(`${BASE}/login`, { username, password });
 export const verifyPassword = (password) => axios.post(`${BASE}/verify-password`, { password });
+export const verifyToken = () => axios.get(`${BASE}/verify-token`, { headers: authHeaders() });
 
 function authHeaders() {
   const token = localStorage.getItem('token');

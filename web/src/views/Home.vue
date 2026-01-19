@@ -943,7 +943,7 @@
 
 <script setup>
 import { ref, onMounted, computed, defineAsyncComponent, onUnmounted } from 'vue';
-import { getMenus, getCards, getAllCards, getPromos, getFriends, verifyPassword, batchParseUrls, batchAddCards, batchUpdateCards, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getTags, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu } from '../api';
+import { getMenus, getCards, getAllCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getTags, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu } from '../api';
 import axios from 'axios';
 
 // AI API 辅助函数
@@ -2575,12 +2575,20 @@ async function openBatchAddModal() {
     try {
       const { password, expiry, token } = JSON.parse(savedData);
       if (Date.now() < expiry && token) {
-        // token未过期，恢复token并直接跳到第二步
+        // 本地token未过期，先向后端验证是否有效
         localStorage.setItem('token', token);
-        batchPassword.value = password;
-        rememberPassword.value = true;
-        batchStep.value = 2;
-        return;
+        try {
+          await verifyToken();
+          // token有效，恢复并跳到第二步
+          batchPassword.value = password;
+          rememberPassword.value = true;
+          batchStep.value = 2;
+          return;
+        } catch (e) {
+          // token无效，清除
+          localStorage.removeItem('token');
+          localStorage.removeItem('nav_password_token');
+        }
       } else {
         // 已过期，清除
         localStorage.removeItem('nav_password_token');
@@ -3010,8 +3018,8 @@ async function autoGenerateAIForNewCards(cardIds) {
 
 // ========== 权限验证系统 ==========
 
-// 检查是否有有效的token
-function hasValidToken() {
+// 检查本地是否有token（仅检查存在性，不验证有效性）
+function hasLocalToken() {
   const savedData = localStorage.getItem('nav_password_token');
   if (savedData) {
     try {
@@ -3035,13 +3043,8 @@ function handleTokenInvalid() {
   authError.value = 'Token已失效，请重新输入管理密码';
 }
 
-// 需要验证权限后执行操作
-function requireAuth(action) {
-  if (hasValidToken()) {
-    action();
-    return;
-  }
-  
+// 显示密码验证弹窗
+function showAuthModal(action) {
   pendingAction.value = action;
   showPasswordModal.value = true;
   authPassword.value = '';
@@ -3058,6 +3061,25 @@ function requireAuth(action) {
     } catch (e) {
       // ignore
     }
+  }
+}
+
+// 需要验证权限后执行操作（异步验证token有效性）
+async function requireAuth(action) {
+  if (!hasLocalToken()) {
+    showAuthModal(action);
+    return;
+  }
+  
+  // 有本地token时，先向后端验证token是否有效
+  try {
+    await verifyToken();
+    // token有效，直接执行操作
+    action();
+  } catch (error) {
+    // token无效，清除本地token并显示密码弹窗
+    handleTokenInvalid();
+    showAuthModal(action);
   }
 }
 
