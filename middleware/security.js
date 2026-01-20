@@ -25,6 +25,15 @@ const loginLimiter = rateLimit({
   skipSuccessfulRequests: true, // 成功的请求不计入
 });
 
+// 注册限流器
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1小时
+  max: 3, // 每小时最多3次注册
+  message: { error: '注册尝试次数过多，请1小时后再试' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // 备份操作限流器
 const backupLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1小时
@@ -196,6 +205,7 @@ function validateUrl(url) {
 module.exports = {
   generalLimiter,
   loginLimiter,
+  registerLimiter,
   backupLimiter,
   bookmarkSyncLimiter,
   verifyLimiter,

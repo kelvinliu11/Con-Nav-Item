@@ -1,9 +1,11 @@
-﻿import axios from 'axios';
+import axios from 'axios';
 const BASE = '/api';
 
-export const login = (username, password) => axios.post(`${BASE}/login`, { username, password });
-export const verifyPassword = (password) => axios.post(`${BASE}/verify-password`, { password });
-export const verifyToken = () => axios.get(`${BASE}/verify-token`, { headers: authHeaders() });
+export const checkInit = () => axios.get(`${BASE}/auth/check-init`);
+export const register = (username, password) => axios.post(`${BASE}/auth/register`, { username, password });
+export const login = (username, password) => axios.post(`${BASE}/auth/login`, { username, password });
+export const verifyPassword = (password) => axios.post(`${BASE}/auth/verify-password`, { password });
+export const verifyToken = () => axios.get(`${BASE}/auth/verify-token`, { headers: authHeaders() });
 
 function authHeaders() {
   const token = localStorage.getItem('token');

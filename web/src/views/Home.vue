@@ -20,6 +20,19 @@
       @selectSubMenu="handleDrawerSubMenuSelect"
     />
     
+    <div class="user-info-bar">
+      <div class="user-info">
+        <span class="username">{{ username }}</span>
+        <button @click="handleLogout" class="logout-btn" title="退出登录">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 0 0 1-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 21 21 21"></polyline>
+          </svg>
+          退出登录
+        </button>
+      </div>
+    </div>
+    
     <div class="menu-bar-fixed">
       <MenuBar 
         :menus="menus" 
@@ -943,8 +956,12 @@
 
 <script setup>
 import { ref, onMounted, computed, defineAsyncComponent, onUnmounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { getMenus, getCards, getAllCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getTags, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu } from '../api';
 import axios from 'axios';
+
+const router = useRouter();
+const username = ref(localStorage.getItem('username') || '用户');
 
 // AI API 辅助函数
 function authHeaders() {
@@ -3117,6 +3134,15 @@ async function requireAuth(action) {
   }
 }
 
+// 退出登录
+function handleLogout() {
+  if (confirm('确定要退出登录吗？')) {
+    localStorage.removeItem('token');
+    localStorage.removeItem('username');
+    router.push('/login');
+  }
+}
+
 // 关闭密码验证弹窗
 function closePasswordModal() {
   showPasswordModal.value = false;
@@ -4096,6 +4122,58 @@ async function saveCardEdit() {
 </script>
 
 <style scoped>
+/* 用户信息栏 */
+.user-info-bar {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 300;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 12px;
+  padding: 8px 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.username {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+}
+
+.logout-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border: none;
+  background: #f5f5f5;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.logout-btn:hover {
+  background: #e8e8e8;
+  color: #333;
+}
+
+.logout-btn svg {
+  flex-shrink: 0;
+}
+
 /* 移动端汉堡按钮 */
 .mobile-hamburger {
   display: none;
@@ -4130,6 +4208,26 @@ async function saveCardEdit() {
 @media (max-width: 768px) {
   .mobile-hamburger {
     display: flex;
+  }
+  
+  .user-info-bar {
+    top: auto;
+    bottom: 16px;
+    right: 16px;
+    padding: 6px 12px;
+  }
+  
+  .username {
+    display: none;
+  }
+  
+  .logout-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  
+  .logout-btn span {
+    display: none;
   }
   
   .menu-bar-fixed {

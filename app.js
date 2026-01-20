@@ -121,9 +121,9 @@ app.use((req, res, next) => {
 // 清除缓存的辅助函数
 app.clearCache = () => cache.clear();
 
+app.use('/api/auth', authRoutes);
 app.use('/api/menus', menuRoutes);
 app.use('/api/cards', cardRoutes);
-app.use('/api', authRoutes);
 app.use('/api/promos', promoRoutes);
 app.use('/api/friends', friendRoutes);
 app.use('/api/users', userRoutes);

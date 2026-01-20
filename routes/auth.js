@@ -3,7 +3,7 @@ const db = require('../db');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const config = require('../config');
-const { loginLimiter, verifyLimiter } = require('../middleware/security');
+const { loginLimiter, verifyLimiter, registerLimiter } = require('../middleware/security');
 const { validatePasswordStrength, validateUsername } = require('../middleware/security');
 const router = express.Router();
 
@@ -18,10 +18,8 @@ function getClientIp(req) {
 
 function getShanghaiTime() {
   const date = new Date();
-  // 获取上海时区时间
   const shanghaiTime = new Date(date.toLocaleString("en-US", {timeZone: "Asia/Shanghai"}));
   
-  // 格式化为 YYYY-MM-DD HH:mm:ss
   const year = shanghaiTime.getFullYear();
   const month = String(shanghaiTime.getMonth() + 1).padStart(2, '0');
   const day = String(shanghaiTime.getDate()).padStart(2, '0');
@@ -31,6 +29,54 @@ function getShanghaiTime() {
   
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
+
+router.get('/check-init', (req, res) => {
+  db.get('SELECT COUNT(*) as count FROM users', (err, row) => {
+    if (err) {
+      return res.status(500).json({ error: '数据库错误' });
+    }
+    res.json({ initialized: row.count > 0 });
+  });
+});
+
+router.post('/register', registerLimiter, (req, res) => {
+  const { username, password } = req.body;
+  
+  if (!username || !password) {
+    return res.status(400).json({ error: '用户名和密码不能为空' });
+  }
+  
+  const usernameValidation = validateUsername(username);
+  if (!usernameValidation.valid) {
+    return res.status(400).json({ error: usernameValidation.message });
+  }
+  
+  const passwordValidation = validatePasswordStrength(password);
+  if (!passwordValidation.valid) {
+    return res.status(400).json({ error: passwordValidation.message });
+  }
+  
+  db.get('SELECT id FROM users WHERE username = ?', [username], (err, user) => {
+    if (err) {
+      return res.status(500).json({ error: '数据库错误' });
+    }
+    if (user) {
+      return res.status(400).json({ error: '用户名已存在' });
+    }
+    
+    const passwordHash = bcrypt.hashSync(password, 10);
+    const now = getShanghaiTime();
+    const ip = getClientIp(req);
+    
+    db.run('INSERT INTO users (username, password, last_login_time, last_login_ip) VALUES (?, ?, ?, ?)',
+      [username, passwordHash, now, ip], function(err) {
+        if (err) {
+          return res.status(500).json({ error: '注册失败' });
+        }
+        res.json({ success: true, message: '注册成功' });
+      });
+  });
+});
 
 router.post('/login', loginLimiter, (req, res) => {
   const { username, password } = req.body;
@@ -73,26 +119,23 @@ router.post('/login', loginLimiter, (req, res) => {
 
 // 仅密码验证（用于首页快速操作）
 router.post('/verify-password', loginLimiter, (req, res) => {
-  const { password } = req.body;
+  const { username, password } = req.body;
   
-  if (!password) {
-    return res.status(400).json({ error: '请输入密码' });
+  if (!username || !password) {
+    return res.status(400).json({ error: '用户名和密码不能为空' });
   }
   
-  // 密码长度验证（防止暴力破解和DoS）
   if (password.length < 1 || password.length > 128) {
     return res.status(400).json({ error: '密码格式无效' });
   }
   
-  // 获取第一个管理员用户（默认id=1）
-  db.get('SELECT * FROM users WHERE id = 1', (err, user) => {
+  db.get('SELECT * FROM users WHERE username = ?', [username], (err, user) => {
     if (err || !user) {
-      return res.status(500).json({ error: '服务器错误' });
+      return res.status(401).json({ error: '用户名或密码错误' });
     }
     
     bcrypt.compare(password, user.password, (err, result) => {
       if (result) {
-        // 包含tokenVersion，密码修改后Token会失效
         const tokenVersion = parseInt(user.token_version, 10) || 1;
         const token = jwt.sign({ 
           id: user.id, 
@@ -101,7 +144,7 @@ router.post('/verify-password', loginLimiter, (req, res) => {
         }, JWT_SECRET, { expiresIn: '2h' });
         res.json({ token });
       } else {
-        res.status(401).json({ error: '密码错误' });
+        res.status(401).json({ error: '用户名或密码错误' });
       }
     });
   });
@@ -146,28 +189,26 @@ router.get('/verify-token', (req, res) => {
 
 // 扩展登录 - 生成长期Token（用于自动备份等功能）
 router.post('/extension/login', loginLimiter, (req, res) => {
-  const { password } = req.body;
+  const { username, password } = req.body;
   
-  if (!password) {
-    return res.status(400).json({ success: false, message: '请输入密码' });
+  if (!username || !password) {
+    return res.status(400).json({ success: false, message: '用户名和密码不能为空' });
   }
   
   if (password.length < 1 || password.length > 128) {
     return res.status(400).json({ success: false, message: '密码格式无效' });
   }
   
-  db.get('SELECT * FROM users WHERE id = 1', (err, user) => {
+  db.get('SELECT * FROM users WHERE username = ?', [username], (err, user) => {
     if (err || !user) {
       console.error('[扩展登录] 查询用户失败:', err);
-      return res.status(500).json({ success: false, message: '服务器错误' });
+      return res.status(401).json({ success: false, message: '用户名或密码错误' });
     }
     
     console.log('[扩展登录] 当前用户token_version:', user.token_version, '类型:', typeof user.token_version);
     
     bcrypt.compare(password, user.password, (err, result) => {
       if (result) {
-        // 生成包含token_version的长期Token（365天有效）
-        // 确保tokenVersion是数字类型
         const tokenVersion = parseInt(user.token_version, 10) || 1;
         console.log('[扩展登录] 生成Token，tokenVersion:', tokenVersion, '类型:', typeof tokenVersion);
         
@@ -176,7 +217,7 @@ router.post('/extension/login', loginLimiter, (req, res) => {
             id: user.id, 
             username: user.username,
             tokenVersion: tokenVersion,
-            type: 'extension'  // 标记为扩展Token
+            type: 'extension'
           }, 
           JWT_SECRET, 
           { expiresIn: '365d' }
@@ -190,7 +231,7 @@ router.post('/extension/login', loginLimiter, (req, res) => {
         });
       } else {
         console.log('[扩展登录] 密码验证失败');
-        res.status(401).json({ success: false, message: '密码错误' });
+        res.status(401).json({ success: false, message: '用户名或密码错误' });
       }
     });
   });

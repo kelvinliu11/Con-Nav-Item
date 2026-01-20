@@ -356,12 +356,12 @@ async function seedDefaultData() {
       }
     }
 
-    // 插入默认管理员账号（仅首次初始化）
-    const userCount = await dbGet('SELECT COUNT(*) as count FROM users');
-    if (userCount && userCount.count === 0) {
-      const passwordHash = bcrypt.hashSync(config.admin.password, 10);
-      await dbRun('INSERT INTO users (username, password) VALUES (?, ?)', [config.admin.username, passwordHash]);
-    }
+    // 多租户模式：不创建默认管理员，用户需要自己注册
+    // const userCount = await dbGet('SELECT COUNT(*) as count FROM users');
+    // if (userCount && userCount.count === 0) {
+    //   const passwordHash = bcrypt.hashSync(config.admin.password, 10);
+    //   await dbRun('INSERT INTO users (username, password) VALUES (?, ?)', [config.admin.username, passwordHash]);
+    // }
 
     // 插入默认友情链接
     const friendCount = await dbGet('SELECT COUNT(*) as count FROM friends');
