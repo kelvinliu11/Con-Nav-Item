@@ -7,7 +7,6 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
 const config = require('../config');
-const { createClient } = require('webdav');
 const { decryptWebDAVConfig } = require('../utils/crypto');
 const { bookmarkSyncLimiter } = require('../middleware/security');
 
@@ -258,6 +257,7 @@ async function getWebDAVClient() {
         
         if (!webdavConfig) return null;
         
+        const { createClient } = await import('webdav');
         return createClient(webdavConfig.url, {
             username: webdavConfig.username,
             password: webdavConfig.password

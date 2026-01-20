@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const archiver = require('archiver');
 const schedule = require('node-schedule');
-const { createClient } = require('webdav');
 const { decryptWebDAVConfig, generateBackupSignature } = require('./crypto');
 
 // 配置文件路径
@@ -200,6 +199,7 @@ async function getWebDAVClient() {
     return null;
   }
   
+  const { createClient } = await import('webdav');
   return createClient(webdavConfig.url, {
     username: webdavConfig.username,
     password: webdavConfig.password

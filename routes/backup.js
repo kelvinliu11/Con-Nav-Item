@@ -7,7 +7,6 @@ const unzipper = require('unzipper');
 const authMiddleware = require('./authMiddleware');
 const util = require('util');
 const exec = util.promisify(require('child_process').exec);
-const { createClient } = require('webdav');
 const { encryptWebDAVConfig, decryptWebDAVConfig, generateBackupSignature, verifyBackupSignature } = require('../utils/crypto');
 const multer = require('multer');
 const { backupLimiter, validateUrl } = require('../middleware/security');
@@ -1002,6 +1001,7 @@ router.post('/webdav/config', authMiddleware, async (req, res) => {
     
     // 测试WebDAV连接
     try {
+      const { createClient } = await import('webdav');
       const client = createClient(url, { username, password: finalPassword });
       await client.getDirectoryContents('/');
     } catch (error) {
@@ -1192,6 +1192,7 @@ router.post('/webdav/backup', authMiddleware, async (req, res) => {
     });
     
     // 3. 上传到WebDAV
+    const { createClient } = await import('webdav');
     const client = createClient(config.url, {
       username: config.username,
       password: config.password
@@ -1268,6 +1269,7 @@ router.get('/webdav/list', authMiddleware, async (req, res) => {
       });
     }
     
+    const { createClient } = await import('webdav');
     const client = createClient(config.url, {
       username: config.username,
       password: config.password
@@ -1354,6 +1356,7 @@ router.post('/webdav/restore', authMiddleware, async (req, res) => {
     }
     
     // 从WebDAV下载备份
+    const { createClient } = await import('webdav');
     const client = createClient(config.url, {
       username: config.username,
       password: config.password
@@ -1735,6 +1738,7 @@ router.delete('/webdav/delete/:filename', authMiddleware, async (req, res) => {
       });
     }
     
+    const { createClient } = await import('webdav');
     const client = createClient(config.url, {
       username: config.username,
       password: config.password

@@ -1,5 +1,36 @@
 # Con-Nav-Item - 现代化个人导航站 v1.0.0
 
+## 🚀 快速开始
+
+### 开发环境
+
+```bash
+# 克隆项目
+git clone https://github.com/zczy-k/Con-Nav-Item.git
+cd Con-Nav-Item
+
+# 安装依赖
+npm run install:all
+
+# 启动开发服务器
+npm run dev
+```
+
+### 生产环境
+
+```bash
+# 安装依赖
+npm install
+
+# 构建前端
+npm run build
+
+# 启动应用
+npm start
+```
+
+访问 `http://localhost:3000`，默认账号：admin / 123456
+
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-1.0.0-brightgreen.svg)](https://github.com/zczy-k/Con-Nav-Item/releases)
 [![Node](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
@@ -182,36 +213,7 @@ Con-Nav-Item/
     └── .crypto-secret       # 加密密钥
 ```
 
-## 🚀 快速开始
 
-### 开发环境
-
-```bash
-# 克隆项目
-git clone https://github.com/zczy-k/Con-Nav-Item.git
-cd Con-Nav-Item
-
-# 安装依赖
-npm run install:all
-
-# 启动开发服务器
-npm run dev
-```
-
-### 生产环境
-
-```bash
-# 安装依赖
-npm install
-
-# 构建前端
-npm run build
-
-# 启动应用
-npm start
-```
-
-访问 `http://localhost:3000`，默认账号：admin / 123456
 
 ## 🚀 快速部署
 
