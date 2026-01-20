@@ -4466,25 +4466,43 @@ async function saveCardEdit() {
 .search-container {
   display: flex;
   align-items: center;
-  background: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border-radius: 28px;
   padding: 0.4rem 0.6rem;
   box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.12),
-    0 2px 8px rgba(0, 0, 0, 0.08);
+    0 8px 32px rgba(0, 0, 0, 0.1),
+    0 2px 8px rgba(0, 0, 0, 0.05);
   flex: 1;
   position: relative;
   z-index: 10;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   transition: all 0.3s ease;
 }
 
 .search-container:focus-within {
+  background: rgba(255, 255, 255, 0.25);
   box-shadow: 
     0 12px 40px rgba(24, 144, 255, 0.2),
     0 4px 12px rgba(0, 0, 0, 0.1);
-  border-color: rgba(24, 144, 255, 0.4);
+  border-color: rgba(255, 255, 255, 0.4);
   transform: translateY(-2px);
+}
+
+.search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 0.6rem 1rem;
+  font-size: 16px;
+  color: #fff;
+  outline: none;
+  width: 100%;
+}
+
+.search-input::placeholder {
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .toolbar-actions {
@@ -4497,24 +4515,25 @@ async function saveCardEdit() {
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  border: none;
-  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.15);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  color: #666;
+  color: rgba(255, 255, 255, 0.9);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
   position: relative;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .toolbar-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.25);
   transform: scale(1.05);
-  color: #1890ff;
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.4);
 }
 
 .toolbar-icon-btn.active {
@@ -7743,18 +7762,20 @@ async function saveCardEdit() {
   justify-content: space-between;
   padding: 10px 16px;
   margin: 0 0 10px 0;
-  background: rgba(255, 255, 255, 0.65);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border-radius: 12px;
   cursor: pointer;
   transition: all 0.2s ease;
   user-select: none;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .card-group-header:hover {
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .card-group-header.single-header {
@@ -7762,7 +7783,8 @@ async function saveCardEdit() {
 }
 
 .card-group-header.single-header:hover {
-  background: rgba(255, 255, 255, 0.65);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .group-header-left {
@@ -7775,7 +7797,7 @@ async function saveCardEdit() {
   width: 24px;
   height: 24px;
   border: none;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   color: rgba(255, 255, 255, 0.8);
   cursor: pointer;
@@ -7783,7 +7805,6 @@ async function saveCardEdit() {
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
-  backdrop-filter: blur(4px);
 }
 
 .collapse-btn svg {
@@ -7795,30 +7816,29 @@ async function saveCardEdit() {
 }
 
 .collapse-btn:hover {
-  background: rgba(255, 255, 255, 0.25);
-  color: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
 }
 
 .group-name {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: #fff;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
 .main-category-name {
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(255, 255, 255, 0.9);
   font-weight: 500;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
 .group-count {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.8);
-  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.1);
   padding: 2px 8px;
   border-radius: 10px;
-  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 /* 分组折叠动画 */

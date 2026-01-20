@@ -297,16 +297,17 @@ onUnmounted(() => {
 }
 
 .menu-bar button {
-  background: transparent;
-  border: none;
-  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
   font-size: 15px;
   font-weight: 500;
-  padding: 0.75rem 1.5rem;
+  padding: 0.6rem 1.2rem;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-  box-shadow: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border-radius: 12px;
   position: relative;
   overflow: hidden;
@@ -318,20 +319,22 @@ onUnmounted(() => {
 .menu-bar button::before {
   content: '';
   position: absolute;
-  bottom: 6px;
+  bottom: 0;
   left: 50%;
   width: 0;
-  height: 2px;
+  height: 3px;
   background: linear-gradient(90deg, #40a9ff, #1890ff);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   transform: translateX(-50%);
-  border-radius: 2px;
+  border-radius: 3px 3px 0 0;
 }
 
 .menu-bar button:hover {
-  color: #40a9ff;
-  background: rgba(64, 169, 255, 0.12);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
 }
 
 .menu-bar button:focus,
@@ -341,12 +344,14 @@ onUnmounted(() => {
 }
 
 .menu-bar button.active {
-  color: #40a9ff;
-  background: rgba(64, 169, 255, 0.15);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.4);
+  font-weight: 600;
 }
 
 .menu-bar button.active::before {
-  width: 50%;
+  width: 60%;
 }
 
 @media (max-width: 768px) {
