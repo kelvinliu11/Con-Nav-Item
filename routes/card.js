@@ -1,21 +1,53 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('./authMiddleware');
+const jwt = require('jsonwebtoken');
+const config = require('../config');
 const { triggerDebouncedBackup } = require('../utils/autoBackup');
 const { detectDuplicates, isDuplicateCard } = require('../utils/urlNormalizer');
 const { autoGenerateForCards } = require('./ai');
 const router = express.Router();
 
+const JWT_SECRET = config.server.jwtSecret;
+
+function getUserFromToken(req) {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith('Bearer ')) {
+    return null;
+  }
+  
+  try {
+    const token = auth.substring(7);
+    const decoded = jwt.verify(token, JWT_SECRET);
+    return decoded.id;
+  } catch (error) {
+    return null;
+  }
+}
+
 // 获取所有卡片（按分类分组，用于首屏加载优化）
 router.get('/', (req, res) => {
   res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
   
-  db.all(`
+  const userId = getUserFromToken(req);
+  
+  let query = `
     SELECT c.*, sm.parent_id as parent_menu_id
     FROM cards c
     LEFT JOIN sub_menus sm ON c.sub_menu_id = sm.id
-    ORDER BY c.menu_id, c.sub_menu_id, c."order"
-  `, [], (err, cards) => {
+  `;
+  let params = [];
+  
+  if (userId) {
+    query += ` WHERE c.user_id = ?`;
+    params.push(userId);
+  } else {
+    query += ` WHERE c.user_id IS NULL`;
+  }
+  
+  query += ` ORDER BY c.menu_id, c.sub_menu_id, c."order"`;
+  
+  db.all(query, params, (err, cards) => {
     if (err) return res.status(500).json({ error: err.message });
     
     if (cards.length === 0) {
@@ -73,6 +105,8 @@ router.get('/:menuId', (req, res) => {
   
   const { subMenuId } = req.query;
   const menuId = req.params.menuId;
+  const userId = getUserFromToken(req);
+  
   let query, params;
   
   if (subMenuId) {
@@ -81,12 +115,28 @@ router.get('/:menuId', (req, res) => {
       FROM cards c
       LEFT JOIN sub_menus sm ON c.sub_menu_id = sm.id
       WHERE c.sub_menu_id = ?
-      ORDER BY c."order"
     `;
     params = [subMenuId];
   } else {
-    query = 'SELECT * FROM cards WHERE menu_id = ? AND sub_menu_id IS NULL ORDER BY "order"';
+    query = `
+      SELECT c.*, NULL as parent_menu_id
+      FROM cards c
+      WHERE c.menu_id = ? AND c.sub_menu_id IS NULL
+    `;
     params = [menuId];
+  }
+  
+  if (userId) {
+    query += ' AND c.user_id = ?';
+    params.push(userId);
+  } else {
+    query += ' AND c.user_id IS NULL';
+  }
+  
+  if (subMenuId) {
+    query += ' ORDER BY c."order"';
+  } else {
+    query += ' ORDER BY c."order"';
   }
   
   db.all(query, params, (err, cards) => {
@@ -195,8 +245,20 @@ router.patch('/batch-update', auth, (req, res) => {
 router.post('/', auth, (req, res) => {
   const { menu_id, sub_menu_id, title, url, logo_url, desc, order, tagIds } = req.body;
   
-  // 先检查是否重复
-  db.all('SELECT * FROM cards', [], (err, existingCards) => {
+  const userId = getUserFromToken(req);
+  
+  // 先检查是否重复（只检查当前用户的数据）
+  let checkQuery = 'SELECT * FROM cards';
+  let checkParams = [];
+  
+  if (userId) {
+    checkQuery += ' WHERE user_id = ?';
+    checkParams.push(userId);
+  } else {
+    checkQuery += ' WHERE user_id IS NULL';
+  }
+  
+  db.all(checkQuery, checkParams, (err, existingCards) => {
     if (err) return res.status(500).json({error: err.message});
     
     const newCard = { title, url };
@@ -212,8 +274,8 @@ router.post('/', auth, (req, res) => {
     
     // 不重复，添加卡片
     db.run(
-      'INSERT INTO cards (menu_id, sub_menu_id, title, url, logo_url, desc, "order") VALUES (?, ?, ?, ?, ?, ?, ?)', 
-      [menu_id, sub_menu_id || null, title, url, logo_url, desc, order || 0],
+      'INSERT INTO cards (menu_id, sub_menu_id, title, url, logo_url, desc, "order", user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 
+      [menu_id, sub_menu_id || null, title, url, logo_url, desc, order || 0, userId || null],
       function(err) {
         if (err) return res.status(500).json({error: err.message});
         
@@ -250,10 +312,20 @@ router.put('/:id', auth, (req, res) => {
   const { menu_id, sub_menu_id, title, url, logo_url, desc, order, tagIds } = req.body;
   const { id } = req.params;
   
-  db.run(
-    'UPDATE cards SET menu_id=?, sub_menu_id=?, title=?, url=?, logo_url=?, desc=?, "order"=? WHERE id=?', 
-    [menu_id, sub_menu_id || null, title, url, logo_url, desc, order || 0, id],
-    function(err) {
+  const userId = getUserFromToken(req);
+  
+  // 确保用户只能更新自己的卡片
+  let updateQuery = 'UPDATE cards SET menu_id=?, sub_menu_id=?, title=?, url=?, logo_url=?, desc=?, "order"=? WHERE id=?';
+  let updateParams = [menu_id, sub_menu_id || null, title, url, logo_url, desc, order || 0, id];
+  
+  if (userId) {
+    updateQuery += ' AND user_id = ?';
+    updateParams.push(userId);
+  } else {
+    updateQuery += ' AND user_id IS NULL';
+  }
+  
+  db.run(updateQuery, updateParams, function(err) {
       if (err) return res.status(500).json({error: err.message});
       
       const changes = this.changes;
@@ -300,6 +372,7 @@ router.put('/:id', auth, (req, res) => {
 
 router.delete('/:id', auth, (req, res) => {
   const cardId = req.params.id;
+  const userId = getUserFromToken(req);
   
   // 使用事务确保数据一致性
   db.serialize(() => {
@@ -315,8 +388,18 @@ router.delete('/:id', auth, (req, res) => {
           return res.status(500).json({ error: '删除标签关联失败: ' + err.message });
         }
         
-        // 再删除卡片
-        db.run('DELETE FROM cards WHERE id=?', [cardId], function(err) {
+        // 再删除卡片（确保用户只能删除自己的卡片）
+        let deleteQuery = 'DELETE FROM cards WHERE id=?';
+        let deleteParams = [cardId];
+        
+        if (userId) {
+          deleteQuery += ' AND user_id = ?';
+          deleteParams.push(userId);
+        } else {
+          deleteQuery += ' AND user_id IS NULL';
+        }
+        
+        db.run(deleteQuery, deleteParams, function(err) {
           if (err) {
             db.run('ROLLBACK');
             return res.status(500).json({ error: '删除卡片失败: ' + err.message });
@@ -359,11 +442,19 @@ router.get('/detect-duplicates/all', auth, (req, res) => {
 // 记录卡片点击（用于频率排序）
 router.post('/:id/click', (req, res) => {
   const cardId = req.params.id;
+  const userId = getUserFromToken(req);
   
-  db.run(
-    'UPDATE cards SET click_count = COALESCE(click_count, 0) + 1 WHERE id = ?',
-    [cardId],
-    function(err) {
+  let updateQuery = 'UPDATE cards SET click_count = COALESCE(click_count, 0) + 1 WHERE id = ?';
+  let updateParams = [cardId];
+  
+  if (userId) {
+    updateQuery += ' AND user_id = ?';
+    updateParams.push(userId);
+  } else {
+    updateQuery += ' AND user_id IS NULL';
+  }
+  
+  db.run(updateQuery, updateParams, function(err) {
       if (err) return res.status(500).json({ error: err.message });
       if (this.changes === 0) return res.status(404).json({ error: '卡片不存在' });
       res.json({ success: true });

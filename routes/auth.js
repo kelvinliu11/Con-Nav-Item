@@ -91,29 +91,135 @@ router.post('/login', loginLimiter, (req, res) => {
   if (!usernameValidation.valid) {
     return res.status(400).json({ error: usernameValidation.message });
   }
+  
+  // 验证密码强度
+  const passwordValidation = validatePasswordStrength(password);
+  if (!passwordValidation.valid) {
+    return res.status(400).json({ error: passwordValidation.message });
+  }
+  
   db.get('SELECT * FROM users WHERE username=?', [username], (err, user) => {
-    if (err || !user) return res.status(401).json({ error: '用户名或密码错误' });
-    bcrypt.compare(password, user.password, (err, result) => {
-      if (result) {
-        // 记录上次登录时间和IP
-        const lastLoginTime = user.last_login_time;
-        const lastLoginIp = user.last_login_ip;
-        // 更新为本次登录（上海时间）
-        const now = getShanghaiTime();
-        const ip = getClientIp(req);
-        db.run('UPDATE users SET last_login_time=?, last_login_ip=? WHERE id=?', [now, ip, user.id]);
-        // 包含tokenVersion，密码修改后Token会失效
-        const tokenVersion = parseInt(user.token_version, 10) || 1;
-        const token = jwt.sign({ 
-          id: user.id, 
-          username: user.username,
-          tokenVersion: tokenVersion
-        }, JWT_SECRET, { expiresIn: '2h' });
-        res.json({ token, lastLoginTime, lastLoginIp });
-      } else {
-        res.status(401).json({ error: '用户名或密码错误' });
-      }
-    });
+    if (err) {
+      return res.status(500).json({ error: '数据库错误' });
+    }
+    
+    if (!user) {
+      // 用户不存在，自动注册
+      const passwordHash = bcrypt.hashSync(password, 10);
+      const now = getShanghaiTime();
+      const ip = getClientIp(req);
+      
+      db.run('INSERT INTO users (username, password, last_login_time, last_login_ip) VALUES (?, ?, ?, ?)',
+        [username, passwordHash, now, ip], function(err) {
+          if (err) {
+            return res.status(500).json({ error: '注册失败' });
+          }
+          
+          const userId = this.lastID;
+          
+          // 复制全局配置的cards数据
+          db.all('SELECT * FROM cards WHERE user_id IS NULL', [], (err, globalCards) => {
+            if (err) {
+              console.error('获取全局cards数据失败:', err);
+            } else if (globalCards && globalCards.length > 0) {
+              const insertPromises = globalCards.map(card => {
+                return new Promise((resolve, reject) => {
+                  db.run(
+                    'INSERT INTO cards (menu_id, sub_menu_id, title, url, logo_url, custom_logo_path, desc, "order", click_count, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    [card.menu_id, card.sub_menu_id, card.title, card.url, card.logo_url, card.custom_logo_path, card.desc, card.order, card.click_count, userId],
+                    function(err) {
+                      if (err) reject(err);
+                      else resolve(this.lastID);
+                    }
+                  );
+                });
+              });
+              
+              Promise.all(insertPromises)
+                .then(() => {
+                  console.log(`新用户 ${username} 已复制全局配置的 ${globalCards.length} 条cards数据`);
+                })
+                .catch(err => {
+                  console.error('复制全局cards数据失败:', err);
+                });
+            }
+            
+            // 生成token
+            const tokenVersion = 1;
+            const token = jwt.sign({ 
+              id: userId, 
+              username: username,
+              tokenVersion: tokenVersion
+            }, JWT_SECRET, { expiresIn: '2h' });
+            
+            res.json({ token, lastLoginTime: null, lastLoginIp: null, isNewUser: true });
+          });
+        });
+    } else {
+      // 用户存在，验证密码
+      bcrypt.compare(password, user.password, (err, result) => {
+        if (result) {
+          // 记录上次登录时间和IP
+          const lastLoginTime = user.last_login_time;
+          const lastLoginIp = user.last_login_ip;
+          // 更新为本次登录（上海时间）
+          const now = getShanghaiTime();
+          const ip = getClientIp(req);
+          db.run('UPDATE users SET last_login_time=?, last_login_ip=? WHERE id=?', [now, ip, user.id], (err) => {
+            if (err) {
+              console.error('更新用户登录信息失败:', err);
+            }
+            
+            // 检查用户是否已经有自己的cards数据
+            db.get('SELECT COUNT(*) as count FROM cards WHERE user_id = ?', [user.id], (err, row) => {
+              if (err) {
+                console.error('检查用户cards数据失败:', err);
+              } else if (row.count === 0) {
+                // 用户没有自己的cards数据，复制全局配置
+                db.all('SELECT * FROM cards WHERE user_id IS NULL', [], (err, globalCards) => {
+                  if (err) {
+                    console.error('获取全局cards数据失败:', err);
+                  } else if (globalCards && globalCards.length > 0) {
+                    // 复制全局配置的cards数据
+                    const insertPromises = globalCards.map(card => {
+                      return new Promise((resolve, reject) => {
+                        db.run(
+                          'INSERT INTO cards (menu_id, sub_menu_id, title, url, logo_url, custom_logo_path, desc, "order", click_count, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                          [card.menu_id, card.sub_menu_id, card.title, card.url, card.logo_url, card.custom_logo_path, card.desc, card.order, card.click_count, user.id],
+                          function(err) {
+                            if (err) reject(err);
+                            else resolve(this.lastID);
+                          }
+                        );
+                      });
+                    });
+                    
+                    Promise.all(insertPromises)
+                      .then(() => {
+                        console.log(`用户 ${username} 已复制全局配置的 ${globalCards.length} 条cards数据`);
+                      })
+                      .catch(err => {
+                        console.error('复制全局cards数据失败:', err);
+                      });
+                  }
+                });
+              }
+              
+              // 包含tokenVersion，密码修改后Token会失效
+              const tokenVersion = parseInt(user.token_version, 10) || 1;
+              const token = jwt.sign({ 
+                id: user.id, 
+                username: user.username,
+                tokenVersion: tokenVersion
+              }, JWT_SECRET, { expiresIn: '2h' });
+              res.json({ token, lastLoginTime, lastLoginIp, isNewUser: false });
+            });
+          });
+        } else {
+          res.status(401).json({ error: '用户名或密码错误' });
+        }
+      });
+    }
   });
 });
 

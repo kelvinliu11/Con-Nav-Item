@@ -1673,8 +1673,16 @@ onMounted(async () => {
   checkAIConfig();
   
   // ========== 优化：先加载缓存数据实现秒开 ==========
-  const CACHE_KEY = 'nav_data_cache';
-  const CARDS_CACHE_KEY = 'nav_cards_cache'; // 分类卡片缓存
+  function getCacheKey() {
+    const currentUser = localStorage.getItem('username') || 'guest';
+    return `nav_data_cache_${currentUser}`;
+  }
+  
+  function getCardsDataCacheKey() {
+    const currentUser = localStorage.getItem('username') || 'guest';
+    return `nav_cards_cache_${currentUser}`;
+  }
+  
   const CACHE_TTL = 5 * 60 * 1000; // 5分钟缓存有效期
   
   // 尝试从缓存加载数据
@@ -1682,7 +1690,7 @@ onMounted(async () => {
   let cachedCardsMap = {}; // 缓存的分类卡片映射
   
   try {
-    const cached = localStorage.getItem(CACHE_KEY);
+    const cached = localStorage.getItem(getCacheKey());
     if (cached) {
       const { data, timestamp } = JSON.parse(cached);
       
@@ -1755,7 +1763,7 @@ onMounted(async () => {
     }
     
     // 加载分类卡片缓存到内存
-    const cardsCacheStr = localStorage.getItem(CARDS_CACHE_KEY);
+    const cardsCacheStr = localStorage.getItem(getCardsDataCacheKey());
     if (cardsCacheStr) {
       const { data: cardsData, timestamp } = JSON.parse(cardsCacheStr);
       if (Date.now() - timestamp < CACHE_TTL) {
@@ -1867,7 +1875,7 @@ onMounted(async () => {
   // ========== 保存缓存数据 ==========
   try {
     if (cacheData.menus) {
-      localStorage.setItem(CACHE_KEY, JSON.stringify({
+      localStorage.setItem(getCacheKey(), JSON.stringify({
         data: cacheData,
         timestamp: Date.now()
       }));
@@ -1958,7 +1966,7 @@ function closeSortMenu() {
 
 
 // 数据版本号（用于缓存同步）
-const DATA_VERSION_KEY = 'nav_data_version';
+const DATA_VERSION_KEY = `nav_data_version_${localStorage.getItem('username') || 'guest'}`;
 let cachedDataVersion = parseInt(localStorage.getItem(DATA_VERSION_KEY) || '0');
 
 // 保存数据版本号
@@ -2317,7 +2325,6 @@ const allCategoryCards = ref({});
 
 // 分类卡片缓存
 const cardsCache = ref({});
-const CARDS_CACHE_KEY = 'nav_cards_cache';
 const CARDS_CACHE_TTL = 5 * 60 * 1000;
 
 // 获取缓存key
@@ -2328,7 +2335,7 @@ function getCardsCacheKey(menuId, subMenuId) {
 // 保存卡片缓存到localStorage
 function saveCardsCache() {
   try {
-    localStorage.setItem(CARDS_CACHE_KEY, JSON.stringify({
+    localStorage.setItem(getCardsDataCacheKey(), JSON.stringify({
       data: cardsCache.value,
       timestamp: Date.now()
     }));
@@ -3615,7 +3622,7 @@ function closeProgressModal() {
 // 清除所有卡片缓存
 function clearAllCardsCache() {
   cardsCache.value = {};
-  localStorage.removeItem(CARDS_CACHE_KEY);
+  localStorage.removeItem(getCardsDataCacheKey());
 }
 
 // 标记需要强制刷新（卡片数据变更后使用）
@@ -4082,7 +4089,7 @@ async function saveCardEdit() {
         // 2. API成功后，清除缓存并强制重新加载当前菜单的所有卡片
         // 这是最可靠的方式，确保数据一致性
         cardsCache.value = {};
-        localStorage.removeItem(CARDS_CACHE_KEY);
+        localStorage.removeItem(getCardsDataCacheKey());
         
         // 强制重新加载卡片
         await loadCards(true);

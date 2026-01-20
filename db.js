@@ -96,13 +96,16 @@ async function initializeDatabase() {
       desc TEXT,
       "order" INTEGER DEFAULT 0,
       click_count INTEGER DEFAULT 0,
+      user_id INTEGER,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(menu_id) REFERENCES menus(id) ON DELETE CASCADE,
-      FOREIGN KEY(sub_menu_id) REFERENCES sub_menus(id) ON DELETE CASCADE
+      FOREIGN KEY(sub_menu_id) REFERENCES sub_menus(id) ON DELETE CASCADE,
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     )`);
     await dbRun(`CREATE INDEX IF NOT EXISTS idx_cards_menu_id ON cards(menu_id)`);
     await dbRun(`CREATE INDEX IF NOT EXISTS idx_cards_sub_menu_id ON cards(sub_menu_id)`);
     await dbRun(`CREATE INDEX IF NOT EXISTS idx_cards_order ON cards("order")`);
+    await dbRun(`CREATE INDEX IF NOT EXISTS idx_cards_user_id ON cards(user_id)`);
 
     await dbRun(`CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

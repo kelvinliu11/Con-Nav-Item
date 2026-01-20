@@ -2,8 +2,8 @@
   <div class="login-container">
     <div class="login-box">
       <div class="login-header">
-        <h1>{{ isRegisterMode ? '注册账号' : '欢迎回来' }}</h1>
-        <p class="subtitle">{{ isRegisterMode ? '创建您的个人导航站账号' : '登录以访问您的导航站' }}</p>
+        <h1>欢迎回来</h1>
+        <p class="subtitle">输入用户名和密码开始使用</p>
       </div>
 
       <form @submit.prevent="handleSubmit" class="login-form">
@@ -31,40 +31,17 @@
           />
         </div>
 
-        <div v-if="isRegisterMode" class="form-group">
-          <label for="confirmPassword">确认密码</label>
-          <input
-            id="confirmPassword"
-            v-model="formData.confirmPassword"
-            type="password"
-            placeholder="请再次输入密码"
-            required
-            :disabled="loading"
-          />
-        </div>
-
         <div class="error-message" v-if="error">
           {{ error }}
         </div>
 
         <button type="submit" class="submit-btn" :disabled="loading">
           <span v-if="loading">处理中...</span>
-          <span v-else>{{ isRegisterMode ? '注册' : '登录' }}</span>
+          <span v-else>登录 / 注册</span>
         </button>
       </form>
 
-      <div class="toggle-mode">
-        <span v-if="isRegisterMode">
-          已有账号？
-          <a @click="toggleMode" href="#">立即登录</a>
-        </span>
-        <span v-else>
-          还没有账号？
-          <a @click="toggleMode" href="#">立即注册</a>
-        </span>
-      </div>
-
-      <div class="password-hint" v-if="isRegisterMode">
+      <div class="password-hint">
         <h4>密码要求：</h4>
         <ul>
           <li>至少 8 个字符</li>
@@ -76,25 +53,17 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { checkInit, register, login } from '../api';
+import { login } from '../api';
 
 const router = useRouter();
-const isRegisterMode = ref(false);
 const loading = ref(false);
 const error = ref('');
 const formData = ref({
   username: '',
-  password: '',
-  confirmPassword: ''
+  password: ''
 });
-
-const toggleMode = () => {
-  isRegisterMode.value = !isRegisterMode.value;
-  error.value = '';
-  formData.value = { username: '', password: '', confirmPassword: '' };
-};
 
 const validateForm = () => {
   if (!formData.value.username || formData.value.username.length < 3) {
@@ -134,11 +103,6 @@ const validateForm = () => {
     return false;
   }
 
-  if (isRegisterMode.value && formData.value.password !== formData.value.confirmPassword) {
-    error.value = '两次输入的密码不一致';
-    return false;
-  }
-
   return true;
 };
 
@@ -151,33 +115,21 @@ const handleSubmit = async () => {
   error.value = '';
 
   try {
-    if (isRegisterMode.value) {
-      await register(formData.value.username, formData.value.password);
-      alert('注册成功！请登录');
-      isRegisterMode.value = false;
-    } else {
-      const response = await login(formData.value.username, formData.value.password);
-      localStorage.setItem('token', response.data.token);
-      localStorage.setItem('username', formData.value.username);
-      router.push('/');
+    const response = await login(formData.value.username, formData.value.password);
+    localStorage.setItem('token', response.data.token);
+    localStorage.setItem('username', formData.value.username);
+    
+    if (response.data.isNewUser) {
+      alert('欢迎新用户！已自动为您创建账号');
     }
+    
+    router.push('/');
   } catch (err) {
     error.value = err.response?.data?.error || err.message || '操作失败，请重试';
   } finally {
     loading.value = false;
   }
 };
-
-onMounted(async () => {
-  try {
-    const response = await checkInit();
-    if (response.data.initialized) {
-      isRegisterMode.value = false;
-    }
-  } catch (err) {
-    console.error('检查初始化状态失败:', err);
-  }
-});
 </script>
 
 <style scoped>

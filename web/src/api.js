@@ -30,13 +30,13 @@ export const deleteSubMenu = (id) => axios.delete(`${BASE}/menus/submenus/${id}`
 // 卡片相关API
 export const getCards = (menuId, subMenuId = null, noCache = false) => {
   const params = subMenuId ? { subMenuId } : {};
-  if (noCache) params._t = Date.now(); // 添加时间戳绕过浏览器缓存
-  return axios.get(`${BASE}/cards/${menuId}`, { params });
+  if (noCache) params._t = Date.now();
+  return axios.get(`${BASE}/cards/${menuId}`, { params, headers: authHeaders() });
 };
 // 批量获取所有卡片（按分类分组）
 export const getAllCards = (noCache = false) => {
   const params = noCache ? { _t: Date.now() } : {};
-  return axios.get(`${BASE}/cards`, { params });
+  return axios.get(`${BASE}/cards`, { params, headers: authHeaders() });
 };
 export const addCard = (data) => axios.post(`${BASE}/cards`, data, { headers: authHeaders() });
 export const updateCard = (id, data) => axios.put(`${BASE}/cards/${id}`, data, { headers: authHeaders() });

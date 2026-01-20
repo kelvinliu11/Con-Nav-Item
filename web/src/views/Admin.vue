@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div v-if="!isLoggedIn" class="login-container">
     <div class="login-card">
       <h2 class="login-title">后台管理登录</h2>
@@ -257,6 +257,12 @@ async function fetchLastLoginInfo() {
 async function handleLogin() {
   if (!username.value || !password.value) {
     loginError.value = '请输入用户名和密码';
+    return;
+  }
+  
+  // 只允许admin账号登录后台管理
+  if (username.value !== 'admin') {
+    loginError.value = '后台管理仅允许admin账号登录';
     return;
   }
   

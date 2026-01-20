@@ -3,10 +3,29 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const db = require('../db');
 const auth = require('./authMiddleware');
+const jwt = require('jsonwebtoken');
+const config = require('../config');
 const { isDuplicateCard } = require('../utils/urlNormalizer');
 const { triggerDebouncedBackup } = require('../utils/autoBackup');
 const { autoGenerateForCards } = require('./ai');
 const router = express.Router();
+
+const JWT_SECRET = config.server.jwtSecret;
+
+function getUserFromToken(req) {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith('Bearer ')) {
+    return null;
+  }
+  
+  try {
+    const token = auth.substring(7);
+    const decoded = jwt.verify(token, JWT_SECRET);
+    return decoded.id;
+  } catch (error) {
+    return null;
+  }
+}
 
 // 批量解析网址信息
 router.post('/parse', auth, async (req, res) => {
@@ -200,13 +219,25 @@ router.post('/check-urls', auth, async (req, res) => {
 // 批量添加卡片
 router.post('/add', auth, (req, res) => {
   const { menu_id, sub_menu_id, cards } = req.body;
+  
+  const userId = getUserFromToken(req);
 
   if (!menu_id || !cards || !Array.isArray(cards) || cards.length === 0) {
     return res.status(400).json({ error: '请提供有效的菜单ID和卡片列表' });
   }
 
-  // 先获取所有现有卡片，用于去重检测
-  db.all('SELECT * FROM cards', [], (err, existingCards) => {
+  // 先获取所有现有卡片，用于去重检测（只检查当前用户的数据）
+  let checkQuery = 'SELECT * FROM cards';
+  let checkParams = [];
+  
+  if (userId) {
+    checkQuery += ' WHERE user_id = ?';
+    checkParams.push(userId);
+  } else {
+    checkQuery += ' WHERE user_id IS NULL';
+  }
+  
+  db.all(checkQuery, checkParams, (err, existingCards) => {
     if (err) {
       return res.status(500).json({ error: err.message });
     }
@@ -270,12 +301,23 @@ router.post('/add', auth, (req, res) => {
     }
 
     // 获取当前最大的 order 值
-    const orderQuery = sub_menu_id 
-      ? 'SELECT MAX("order") as max_order FROM cards WHERE sub_menu_id = ?'
-      : 'SELECT MAX("order") as max_order FROM cards WHERE menu_id = ? AND sub_menu_id IS NULL';
+    let orderQuery, orderParams;
     
-    const orderParams = sub_menu_id ? [sub_menu_id] : [menu_id];
-
+    if (sub_menu_id) {
+      orderQuery = 'SELECT MAX("order") as max_order FROM cards WHERE sub_menu_id = ?';
+      orderParams = [sub_menu_id];
+    } else {
+      orderQuery = 'SELECT MAX("order") as max_order FROM cards WHERE menu_id = ? AND sub_menu_id IS NULL';
+      orderParams = [menu_id];
+    }
+    
+    if (userId) {
+      orderQuery += ' AND user_id = ?';
+      orderParams.push(userId);
+    } else {
+      orderQuery += ' AND user_id IS NULL';
+    }
+    
     db.get(orderQuery, orderParams, (err, row) => {
       if (err) {
         return res.status(500).json({ error: err.message });
@@ -292,8 +334,8 @@ router.post('/add', auth, (req, res) => {
         const order = nextOrder + index;
 
       db.run(
-        'INSERT INTO cards (menu_id, sub_menu_id, title, url, logo_url, desc, "order") VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [menu_id, sub_menu_id || null, title, url, logo, description, order],
+        'INSERT INTO cards (menu_id, sub_menu_id, title, url, logo_url, desc, "order", user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [menu_id, sub_menu_id || null, title, url, logo, description, order, userId || null],
         function(err) {
           if (err && !hasError) {
             hasError = true;
