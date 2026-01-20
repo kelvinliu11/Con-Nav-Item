@@ -1672,6 +1672,18 @@ onMounted(async () => {
   // 检查 AI 配置状态
   checkAIConfig();
   
+  // 清理 Service Worker 中的 API 缓存
+  if ('caches' in window) {
+    caches.keys().then(cacheNames => {
+      cacheNames.forEach(cacheName => {
+        // 只清理 API 相关的缓存
+        if (cacheName.includes('runtime')) {
+          caches.delete(cacheName);
+        }
+      });
+    });
+  }
+  
   // ========== 优化：先加载缓存数据实现秒开 ==========
   function getCacheKey() {
     const currentUser = localStorage.getItem('username') || 'guest';
@@ -2488,7 +2500,7 @@ async function loadCards(forceRefresh = false) {
 // 加载所有卡片用于搜索（优化版：单次请求获取所有数据）
 async function loadAllCardsForSearch() {
   try {
-    const res = await getAllCards();
+    const res = await getAllCards(true);
     const { cardsByCategory } = res.data;
     
     // 更新缓存

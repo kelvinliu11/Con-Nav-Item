@@ -1,5 +1,5 @@
-const CACHE_NAME = 'con-nav-item-v3';
-const RUNTIME_CACHE = 'con-nav-runtime-v3';
+const CACHE_NAME = 'con-nav-item-v4';
+const RUNTIME_CACHE = 'con-nav-runtime-v4';
 
 // 需要预缓存的核心资源
 const PRECACHE_URLS = [

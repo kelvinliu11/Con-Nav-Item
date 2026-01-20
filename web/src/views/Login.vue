@@ -119,6 +119,15 @@ const handleSubmit = async () => {
     localStorage.setItem('token', response.data.token);
     localStorage.setItem('username', formData.value.username);
     
+    // 清理 Service Worker 缓存
+    if ('caches' in window) {
+      caches.keys().then(cacheNames => {
+        cacheNames.forEach(cacheName => {
+          caches.delete(cacheName);
+        });
+      });
+    }
+    
     if (response.data.isNewUser) {
       alert('欢迎新用户！已自动为您创建账号');
     }
