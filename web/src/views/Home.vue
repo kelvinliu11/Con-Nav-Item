@@ -554,6 +554,11 @@
           </button>
           <span class="footer-divider"></span>
           <div class="footer-tools">
+            <button v-if="activeMenu" @click="openAddCardModal" class="footer-tool-btn" title="添加卡片">
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M10 5v10M5 10h10" stroke-linecap="round"/>
+              </svg>
+            </button>
             <button v-if="activeMenu" @click="openBatchAddModal" class="footer-tool-btn" title="批量添加网站">
               <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
                 <rect x="2" y="2" width="6" height="6" rx="1"/>
@@ -839,6 +844,159 @@
       </div>
     </div>
     
+    <!-- 添加卡片弹窗 -->
+    <div v-if="showAddCardModal" class="modal-overlay">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>添加卡片</h3>
+          <button @click="closeAddCardModal" class="close-btn">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="edit-card-form">
+            <div class="form-group">
+              <label>标题</label>
+              <div class="input-with-ai">
+                <input 
+                  v-model="cardAddForm.title" 
+                  type="text" 
+                  placeholder="请输入标题"
+                  class="batch-input"
+                />
+                <button 
+                  @click="generateAIName" 
+                  class="ai-btn" 
+                  :class="{ 'ai-btn-disabled': !aiConfigured }"
+                  :disabled="aiGeneratingName || !aiConfigured"
+                  :title="aiConfigured ? 'AI 生成名称' : '请先在后台配置 AI 服务'"
+                >
+                  {{ aiGeneratingName ? '⏳' : '✨' }}
+                </button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>网址</label>
+              <input 
+                v-model="cardAddForm.url" 
+                type="url" 
+                placeholder="请输入网址"
+                class="batch-input"
+              />
+            </div>
+            <div class="form-group">
+              <label>Logo 链接</label>
+              <input 
+                v-model="cardAddForm.logo_url" 
+                type="url" 
+                placeholder="请输入 Logo 图片链接"
+                class="batch-input"
+              />
+            </div>
+            <div class="form-group">
+              <label>描述</label>
+              <div class="input-with-ai">
+                <textarea 
+                  v-model="cardAddForm.desc" 
+                  placeholder="请输入描述"
+                  class="batch-textarea"
+                  rows="3"
+                ></textarea>
+                <button 
+                  @click="generateAIDescription" 
+                  class="ai-btn" 
+                  :class="{ 'ai-btn-disabled': !aiConfigured }"
+                  :disabled="aiGenerating || !aiConfigured"
+                  :title="aiConfigured ? 'AI 生成描述' : '请先在后台配置 AI 服务'"
+                >
+                  {{ aiGenerating ? '⏳' : '✨' }}
+                </button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>
+                标签
+                <button 
+                  @click="generateAITags" 
+                  class="ai-btn-inline" 
+                  :class="{ 'ai-btn-disabled': !aiConfigured }"
+                  :disabled="aiGeneratingTags || !aiConfigured"
+                  :title="aiConfigured ? 'AI 推荐标签' : '请先在后台配置 AI 服务'"
+                >
+                  {{ aiGeneratingTags ? '⏳' : '🏷️ AI推荐' }}
+                </button>
+              </label>
+              <div class="tag-select-area">
+                <div class="selected-tags">
+                  <span 
+                    v-for="tagId in cardAddForm.tagIds" 
+                    :key="tagId"
+                    class="selected-tag"
+                    :style="{ backgroundColor: getTagById(tagId)?.color || '#666' }"
+                  >
+                    {{ getTagById(tagId)?.name || '未知' }}
+                    <button @click="removeTag(tagId)" class="remove-tag-btn">×</button>
+                  </span>
+                </div>
+                <div class="tag-search-row">
+                  <input 
+                    v-model="tagSearchQuery" 
+                    type="text" 
+                    placeholder="搜索标签..." 
+                    class="tag-search-input"
+                  />
+                  <button @click="showQuickAddTag = !showQuickAddTag" class="quick-add-tag-btn" :title="showQuickAddTag ? '取消' : '新建标签'">
+                    {{ showQuickAddTag ? '×' : '+ 新建' }}
+                  </button>
+                </div>
+                <div v-if="showQuickAddTag" class="quick-add-tag-form">
+                  <input 
+                    v-model="quickTagName" 
+                    type="text" 
+                    placeholder="标签名称" 
+                    class="quick-tag-name-input"
+                    maxlength="20"
+                  />
+                  <input 
+                    v-model="quickTagColor" 
+                    type="color" 
+                    class="quick-tag-color-input"
+                    title="选择颜色"
+                  />
+                  <button @click="createQuickTag" class="quick-tag-create-btn" :disabled="!quickTagName.trim()">
+                    创建
+                  </button>
+                </div>
+                <div class="available-tags">
+                  <button 
+                    v-for="tag in filteredAvailableTags" 
+                    :key="tag.id"
+                    @click="addTag(tag.id)"
+                    class="available-tag-btn"
+                    :style="{ borderColor: tag.color, color: tag.color }"
+                  >
+                    + {{ tag.name }}
+                  </button>
+                  <span v-if="filteredAvailableTags.length === 0 && tagSearchQuery" class="no-tags-hint">
+                    未找到匹配的标签
+                  </span>
+                </div>
+              </div>
+            </div>
+            <p v-if="addError" class="batch-error">{{ addError }}</p>
+            <div class="batch-actions" style="margin-top: 20px;">
+              <button @click="closeAddCardModal" class="btn btn-cancel">取消</button>
+              <button @click="saveCardAdd" class="btn btn-primary" :disabled="addLoading">
+                {{ addLoading ? '添加中...' : '添加' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
     <!-- 添加搜索引擎弹窗 -->
     <div v-if="showAddEngineModal" class="modal-overlay">
       <div class="modal-content" @click.stop>
@@ -957,7 +1115,7 @@
 <script setup>
 import { ref, onMounted, computed, defineAsyncComponent, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { getMenus, getCards, getAllCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getTags, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu } from '../api';
+import { getMenus, getCards, getAllCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, deleteCard, updateCard, addCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getTags, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu } from '../api';
 import axios from 'axios';
 
 const router = useRouter();
@@ -1128,6 +1286,18 @@ const editingCard = ref(null);
 const editError = ref('');
 const editLoading = ref(false);
 const cardEditForm = ref({
+  title: '',
+  url: '',
+  logo_url: '',
+  desc: '',
+  tagIds: []
+});
+
+// 添加卡片模态框相关状态
+const showAddCardModal = ref(false);
+const addError = ref('');
+const addLoading = ref(false);
+const cardAddForm = ref({
   title: '',
   url: '',
   logo_url: '',
@@ -1662,6 +1832,17 @@ const groupedCards = computed(() => {
   return groups;
 });
 
+// 获取缓存key
+function getCacheKey() {
+  const currentUser = localStorage.getItem('username') || 'guest';
+  return `nav_data_cache_${currentUser}`;
+}
+
+function getCardsDataCacheKey() {
+  const currentUser = localStorage.getItem('username') || 'guest';
+  return `nav_cards_cache_${currentUser}`;
+}
+
 onMounted(async () => {
   // 加载保存的背景设置
   loadBgSetting();
@@ -1685,16 +1866,6 @@ onMounted(async () => {
   }
   
   // ========== 优化：先加载缓存数据实现秒开 ==========
-  function getCacheKey() {
-    const currentUser = localStorage.getItem('username') || 'guest';
-    return `nav_data_cache_${currentUser}`;
-  }
-  
-  function getCardsDataCacheKey() {
-    const currentUser = localStorage.getItem('username') || 'guest';
-    return `nav_cards_cache_${currentUser}`;
-  }
-  
   const CACHE_TTL = 5 * 60 * 1000; // 5分钟缓存有效期
   
   // 尝试从缓存加载数据
@@ -3846,21 +4017,66 @@ function closeEditCardModal() {
   quickTagColor.value = '#1890ff';
 }
 
+// 打开添加卡片模态框
+function openAddCardModal() {
+  cardAddForm.value = {
+    title: '',
+    url: '',
+    logo_url: '',
+    desc: '',
+    tagIds: []
+  };
+  addError.value = '';
+  showAddCardModal.value = true;
+  
+  // 刷新 AI 配置状态（确保最新）
+  checkAIConfig();
+}
+
+// 关闭添加卡片模态框
+function closeAddCardModal() {
+  showAddCardModal.value = false;
+  cardAddForm.value = {
+    title: '',
+    url: '',
+    logo_url: '',
+    desc: '',
+    tagIds: []
+  };
+  tagSearchQuery.value = '';
+  showQuickAddTag.value = false;
+  quickTagName.value = '';
+  quickTagColor.value = '#1890ff';
+}
+
 // 标签相关辅助方法
 function getTagById(tagId) {
   return allTags.value.find(t => t.id === tagId);
 }
 
 function addTag(tagId) {
-  if (!cardEditForm.value.tagIds.includes(tagId)) {
-    cardEditForm.value.tagIds.push(tagId);
+  if (showEditCardModal.value) {
+    if (!cardEditForm.value.tagIds.includes(tagId)) {
+      cardEditForm.value.tagIds.push(tagId);
+    }
+  } else if (showAddCardModal.value) {
+    if (!cardAddForm.value.tagIds.includes(tagId)) {
+      cardAddForm.value.tagIds.push(tagId);
+    }
   }
 }
 
 function removeTag(tagId) {
-  const index = cardEditForm.value.tagIds.indexOf(tagId);
-  if (index > -1) {
-    cardEditForm.value.tagIds.splice(index, 1);
+  if (showEditCardModal.value) {
+    const index = cardEditForm.value.tagIds.indexOf(tagId);
+    if (index > -1) {
+      cardEditForm.value.tagIds.splice(index, 1);
+    }
+  } else if (showAddCardModal.value) {
+    const index = cardAddForm.value.tagIds.indexOf(tagId);
+    if (index > -1) {
+      cardAddForm.value.tagIds.splice(index, 1);
+    }
   }
 }
 
@@ -3868,11 +4084,16 @@ const availableTagsForEdit = computed(() => {
   return allTags.value.filter(tag => !cardEditForm.value.tagIds.includes(tag.id));
 });
 
+const availableTagsForAdd = computed(() => {
+  return allTags.value.filter(tag => !cardAddForm.value.tagIds.includes(tag.id));
+});
+
 // 过滤后的可用标签（支持搜索）
 const filteredAvailableTags = computed(() => {
   const query = tagSearchQuery.value.trim().toLowerCase();
-  if (!query) return availableTagsForEdit.value;
-  return availableTagsForEdit.value.filter(tag => 
+  const availableTags = showEditCardModal.value ? availableTagsForEdit.value : availableTagsForAdd.value;
+  if (!query) return availableTags;
+  return availableTags.filter(tag => 
     tag.name.toLowerCase().includes(query)
   );
 });
@@ -3899,7 +4120,8 @@ async function createQuickTag() {
     allTags.value.push(newTag);
     
     // 自动选中新创建的标签
-    cardEditForm.value.tagIds.push(newTag.id);
+    const currentForm = showEditCardModal.value ? cardEditForm.value : cardAddForm.value;
+    currentForm.tagIds.push(newTag.id);
     
     // 重置表单
     quickTagName.value = '';
@@ -3912,7 +4134,9 @@ async function createQuickTag() {
 
 // AI 生成名称
 async function generateAIName() {
-  if (!cardEditForm.value.url) {
+  const currentForm = showEditCardModal.value ? cardEditForm.value : cardAddForm.value;
+  
+  if (!currentForm.url) {
     showToastMessage('请先输入网址', 'error');
     return;
   }
@@ -3922,8 +4146,8 @@ async function generateAIName() {
     const res = await api.post('/api/ai/generate', {
       type: 'name',
       card: {
-        title: cardEditForm.value.title || '',
-        url: cardEditForm.value.url
+        title: currentForm.title || '',
+        url: currentForm.url
       }
     });
     
@@ -3931,7 +4155,7 @@ async function generateAIName() {
         if (res.data.unchanged?.name) {
           showToastMessage('生成结果与当前相同，无需更新', 'info');
         } else {
-          cardEditForm.value.title = res.data.name;
+          currentForm.title = res.data.name;
           showToastMessage('名称生成成功', 'success');
         }
       } else {
@@ -3954,7 +4178,9 @@ async function generateAIName() {
 
 // AI 生成描述
 async function generateAIDescription() {
-  if (!cardEditForm.value.url) {
+  const currentForm = showEditCardModal.value ? cardEditForm.value : cardAddForm.value;
+  
+  if (!currentForm.url) {
     showToastMessage('请先输入网址', 'error');
     return;
   }
@@ -3964,8 +4190,8 @@ async function generateAIDescription() {
     const res = await api.post('/api/ai/generate', {
       type: 'description',
       card: {
-        title: cardEditForm.value.title || '',
-        url: cardEditForm.value.url
+        title: currentForm.title || '',
+        url: currentForm.url
       }
     });
     
@@ -3996,7 +4222,9 @@ async function generateAIDescription() {
 
 // AI 推荐标签
 async function generateAITags() {
-  if (!cardEditForm.value.url) {
+  const currentForm = showEditCardModal.value ? cardEditForm.value : cardAddForm.value;
+  
+  if (!currentForm.url) {
     showToastMessage('请先输入网址', 'error');
     return;
   }
@@ -4007,9 +4235,9 @@ async function generateAITags() {
     const res = await api.post('/api/ai/generate', {
       type: 'tags',
       card: {
-        title: cardEditForm.value.title || '',
-        url: cardEditForm.value.url,
-        desc: cardEditForm.value.desc || ''
+        title: currentForm.title || '',
+        url: currentForm.url,
+        desc: currentForm.desc || ''
       },
       existingTags
     });
@@ -4020,8 +4248,8 @@ async function generateAITags() {
       // 添加推荐的现有标签
       for (const tagName of recommendedTags) {
         const tag = allTags.value.find(t => t.name === tagName);
-        if (tag && !cardEditForm.value.tagIds.includes(tag.id)) {
-          cardEditForm.value.tagIds.push(tag.id);
+        if (tag && !currentForm.tagIds.includes(tag.id)) {
+          currentForm.tagIds.push(tag.id);
         }
       }
       
@@ -4033,8 +4261,8 @@ async function generateAITags() {
           for (const tagName of newTags) {
             const existingTag = allTags.value.find(t => t.name.toLowerCase() === tagName.toLowerCase());
             if (existingTag) {
-              if (!cardEditForm.value.tagIds.includes(existingTag.id)) {
-                cardEditForm.value.tagIds.push(existingTag.id);
+              if (!currentForm.tagIds.includes(existingTag.id)) {
+                currentForm.tagIds.push(existingTag.id);
               }
             } else {
               try {
@@ -4138,8 +4366,59 @@ async function saveCardEdit() {
     editLoading.value = false;
   }
 }
-</script>
 
+// 添加卡片
+async function saveCardAdd() {
+  if (!cardAddForm.value.title.trim()) {
+    addError.value = '请输入标题';
+    return;
+  }
+  if (!cardAddForm.value.url.trim()) {
+    addError.value = '请输入网址';
+    return;
+  }
+  
+  addLoading.value = true;
+  addError.value = '';
+  
+  const newCardData = {
+    title: cardAddForm.value.title,
+    url: cardAddForm.value.url,
+    logo_url: cardAddForm.value.logo_url,
+    desc: cardAddForm.value.desc,
+    menu_id: activeMenu.value.id,
+    sub_menu_id: activeSubMenu.value ? activeSubMenu.value.id : null,
+    tagIds: cardAddForm.value.tagIds
+  };
+  
+  try {
+    await addCard(newCardData);
+    
+    // 清除缓存并强制重新加载当前菜单的所有卡片
+    cardsCache.value = {};
+    localStorage.removeItem(getCardsDataCacheKey());
+    
+    // 强制重新加载卡片
+    await loadCards(true);
+    
+    // 更新 allCards（用于搜索）
+    await loadAllCardsForSearch();
+    
+    showToastMessage('添加成功', 'success');
+    closeAddCardModal();
+  } catch (error) {
+    console.error('添加卡片失败:', error);
+    if (error.response?.status === 401) {
+      closeAddCardModal();
+      handleTokenInvalid();
+    } else {
+      addError.value = '添加失败：' + (error.response?.data?.error || error.message);
+    }
+  } finally {
+    addLoading.value = false;
+  }
+}
+</script>
 <style scoped>
 /* 用户信息栏 */
 .user-info-bar {
