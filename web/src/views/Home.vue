@@ -577,7 +577,7 @@
             </button>
           </div>
         </div>
-        <p class="copyright">Copyright © 2025 Con-Nav-Item | <a href="https://github.com/zczy-k/Con-Nav-Item" target="_blank" class="footer-link">Powered by zczy-k</a></p>
+        <p class="copyright">微信号:lk794263814 | Copyright © 2025 Con-Nav-Item | <a href="https://github.com/zczy-k/Con-Nav-Item" target="_blank" class="footer-link">Powered by zczy-k</a></p>
       </div>
     </footer>
 
