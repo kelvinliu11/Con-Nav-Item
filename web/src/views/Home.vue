@@ -330,6 +330,7 @@
                   @openMovePanel="openMovePanel"
                   @requireAuth="handleRequireAuth"
                   @cardClicked="handleCardClicked"
+                  @cardReorder="handleCardReorder"
                   @click.stop
                 />
               </transition>
@@ -356,6 +357,7 @@
             @openMovePanel="openMovePanel"
             @requireAuth="handleRequireAuth"
             @cardClicked="handleCardClicked"
+            @cardReorder="handleCardReorder"
             @click.stop
           />
     </div>
@@ -733,11 +735,38 @@
             </div>
             <div class="form-group">
               <label>Logo 链接</label>
+              <div class="input-with-actions">
+                <input 
+                  v-model="cardEditForm.logo_url" 
+                  type="url" 
+                  placeholder="请输入 Logo 图片链接"
+                  class="batch-input"
+                />
+                <button 
+                  @click="autoFetchFavicon('edit')" 
+                  class="action-btn"
+                  title="自动获取网站图标"
+                >
+                  <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+                <button 
+                  @click="triggerLogoUpload('edit')" 
+                  class="action-btn"
+                  title="上传本地图片"
+                >
+                  <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+              </div>
               <input 
-                v-model="cardEditForm.logo_url" 
-                type="url" 
-                placeholder="请输入 Logo 图片链接"
-                class="batch-input"
+                ref="logoUploadEdit"
+                type="file" 
+                accept="image/*"
+                style="display: none"
+                @change="handleLogoUpload($event, 'edit')"
               />
             </div>
             <div class="form-group">
@@ -888,11 +917,38 @@
             </div>
             <div class="form-group">
               <label>Logo 链接</label>
+              <div class="input-with-actions">
+                <input 
+                  v-model="cardAddForm.logo_url" 
+                  type="url" 
+                  placeholder="请输入 Logo 图片链接"
+                  class="batch-input"
+                />
+                <button 
+                  @click="autoFetchFavicon('add')" 
+                  class="action-btn"
+                  title="自动获取网站图标"
+                >
+                  <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+                <button 
+                  @click="triggerLogoUpload('add')" 
+                  class="action-btn"
+                  title="上传本地图片"
+                >
+                  <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+              </div>
               <input 
-                v-model="cardAddForm.logo_url" 
-                type="url" 
-                placeholder="请输入 Logo 图片链接"
-                class="batch-input"
+                ref="logoUploadAdd"
+                type="file" 
+                accept="image/*"
+                style="display: none"
+                @change="handleLogoUpload($event, 'add')"
               />
             </div>
             <div class="form-group">
@@ -992,6 +1048,36 @@
                 {{ addLoading ? '添加中...' : '添加' }}
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 图片裁剪弹窗 -->
+    <div v-if="showCropModal" class="modal-overlay">
+      <div class="modal-content crop-modal" @click.stop>
+        <div class="modal-header">
+          <h3>裁剪图片</h3>
+          <button @click="closeCropModal" class="close-btn">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="crop-container" ref="cropContainerRef">
+            <canvas ref="cropCanvas" class="crop-canvas"></canvas>
+          </div>
+          <div class="crop-info">
+            <span>拖动裁剪框调整位置，拖动角点调整大小，滚轮缩放图片</span>
+            <span v-if="cropRect.width > 0 && cropRect.height > 0" class="crop-size">
+              选中尺寸: {{ Math.round(cropRect.width) }} x {{ Math.round(cropRect.height) }} px
+            </span>
+          </div>
+          <div class="crop-buttons">
+            <button @click="resetCrop" class="btn btn-secondary">重置</button>
+            <button @click="closeCropModal" class="btn btn-secondary">取消</button>
+            <button @click="confirmCrop" class="btn btn-primary">确认裁剪</button>
           </div>
         </div>
       </div>
@@ -1113,7 +1199,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, defineAsyncComponent, onUnmounted } from 'vue';
+import { ref, onMounted, computed, defineAsyncComponent, onUnmounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { getMenus, getCards, getAllCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, deleteCard, updateCard, addCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getTags, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu } from '../api';
 import axios from 'axios';
@@ -1304,6 +1390,24 @@ const cardAddForm = ref({
   desc: '',
   tagIds: []
 });
+
+// 图片裁剪相关状态
+const showCropModal = ref(false);
+const cropCanvas = ref(null);
+const cropContainerRef = ref(null);
+const cropImageSrc = ref('');
+const logoUploadAdd = ref(null);
+const logoUploadEdit = ref(null);
+const cropTargetType = ref('add'); // 'add' or 'edit'
+const cropRect = ref({ x: 0, y: 0, width: 0, height: 0 });
+const cropImage = ref(null);
+const cropScale = ref(1);
+const cropOffset = ref({ x: 0, y: 0 });
+const isDraggingCrop = ref(false);
+const isResizingCrop = ref(false);
+const isMovingImage = ref(false);
+const resizeHandle = ref('');
+const dragStart = ref({ x: 0, y: 0 });
 
 // 标签搜索和快速创建
 const tagSearchQuery = ref('');
@@ -3393,6 +3497,43 @@ function handleRequireAuth(callback) {
   requireAuth(callback);
 }
 
+function handleCardReorder(newCards) {
+  requireAuth(async () => {
+    try {
+      const menuId = activeMenu.value?.id;
+      const subMenuId = activeSubMenu.value?.id;
+      
+      const updatePromises = newCards.map((card, index) => {
+        return updateCard(card.id, {
+          title: card.title,
+          url: card.url,
+          logo_url: card.logo_url,
+          desc: card.desc,
+          menu_id: card.menu_id || menuId,
+          sub_menu_id: card.sub_menu_id || subMenuId,
+          order: index
+        });
+      });
+      
+      await Promise.all(updatePromises);
+      
+      cards.value = newCards;
+      
+      cardsCache.value = {};
+      localStorage.removeItem(getCardsDataCacheKey());
+      
+      await loadCards(true);
+    } catch (error) {
+      console.error('卡片排序失败:', error);
+      if (error.response?.status === 401) {
+        handleTokenInvalid();
+      } else {
+        alert('排序失败，请重试');
+      }
+    }
+  });
+}
+
 function handleToggleCardSelection(card) {
   requireAuth(() => toggleCardSelection(card));
 }
@@ -4047,6 +4188,402 @@ function closeAddCardModal() {
   showQuickAddTag.value = false;
   quickTagName.value = '';
   quickTagColor.value = '#1890ff';
+}
+
+// 自动获取网站 favicon
+function autoFetchFavicon(type) {
+  const form = type === 'edit' ? cardEditForm.value : cardAddForm.value;
+  const url = form.url.trim();
+  
+  if (!url) {
+    alert('请先输入网址');
+    return;
+  }
+  
+  try {
+    const urlObj = new URL(url);
+    const faviconUrl = `${urlObj.protocol}//${urlObj.hostname}/favicon.ico`;
+    form.logo_url = faviconUrl;
+  } catch (e) {
+    alert('网址格式不正确');
+  }
+}
+
+// 触发 Logo 上传
+function triggerLogoUpload(type) {
+  const uploadRef = type === 'edit' ? logoUploadEdit.value : logoUploadAdd.value;
+  if (uploadRef) {
+    uploadRef.click();
+  }
+}
+
+// 处理 Logo 上传
+function handleLogoUpload(event, type) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      cropImage.value = img;
+      cropImageSrc.value = e.target.result;
+      cropTargetType.value = type;
+      showCropModal.value = true;
+      nextTick(() => {
+        initCropCanvas();
+      });
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+  
+  event.target.value = '';
+}
+
+// 初始化裁剪画布
+function initCropCanvas() {
+  const canvas = cropCanvas.value;
+  const container = cropContainerRef.value;
+  if (!canvas || !container || !cropImage.value) return;
+  
+  const img = cropImage.value;
+  const containerRect = container.getBoundingClientRect();
+  
+  canvas.width = containerRect.width;
+  canvas.height = containerRect.height;
+  
+  cropScale.value = 1;
+  cropOffset.value = { x: 0, y: 0 };
+  
+  const imgWidth = img.width;
+  const imgHeight = img.height;
+  
+  const scale = Math.min(
+    (containerRect.width - 40) / imgWidth,
+    (containerRect.height - 40) / imgHeight,
+    1
+  );
+  
+  cropScale.value = scale;
+  
+  const scaledWidth = imgWidth * scale;
+  const scaledHeight = imgHeight * scale;
+  
+  cropOffset.value = {
+    x: (containerRect.width - scaledWidth) / 2,
+    y: (containerRect.height - scaledHeight) / 2
+  };
+  
+  const cropWidth = Math.min(scaledWidth * 0.8, containerRect.width - 40);
+  const cropHeight = Math.min(scaledHeight * 0.8, containerRect.height - 40);
+  
+  cropRect.value = {
+    x: (containerRect.width - cropWidth) / 2,
+    y: (containerRect.height - cropHeight) / 2,
+    width: cropWidth,
+    height: cropHeight
+  };
+  
+  drawCropCanvas();
+  
+  canvas.addEventListener('mousedown', handleCropMouseDown);
+  canvas.addEventListener('mousemove', handleCropMouseMove);
+  canvas.addEventListener('mouseup', handleCropMouseUp);
+  canvas.addEventListener('mouseleave', handleCropMouseUp);
+  canvas.addEventListener('wheel', handleCropWheel, { passive: false });
+}
+
+// 绘制裁剪画布
+function drawCropCanvas() {
+  const canvas = cropCanvas.value;
+  if (!canvas || !cropImage.value) return;
+  
+  const ctx = canvas.getContext('2d');
+  const img = cropImage.value;
+  
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  const scaledWidth = img.width * cropScale.value;
+  const scaledHeight = img.height * cropScale.value;
+  
+  ctx.save();
+  ctx.translate(cropOffset.value.x, cropOffset.value.y);
+  ctx.drawImage(img, 0, 0, scaledWidth, scaledHeight);
+  ctx.restore();
+  
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  ctx.clearRect(
+    cropRect.value.x,
+    cropRect.value.y,
+    cropRect.value.width,
+    cropRect.value.height
+  );
+  
+  ctx.save();
+  ctx.translate(cropOffset.value.x, cropOffset.value.y);
+  ctx.drawImage(
+    img,
+    (cropRect.value.x - cropOffset.value.x) / cropScale.value,
+    (cropRect.value.y - cropOffset.value.y) / cropScale.value,
+    cropRect.value.width / cropScale.value,
+    cropRect.value.height / cropScale.value,
+    cropRect.value.x - cropOffset.value.x,
+    cropRect.value.y - cropOffset.value.y,
+    cropRect.value.width,
+    cropRect.value.height
+  );
+  ctx.restore();
+  
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(
+    cropRect.value.x,
+    cropRect.value.y,
+    cropRect.value.width,
+    cropRect.value.height
+  );
+  
+  drawCropHandles(ctx);
+}
+
+// 绘制裁剪框控制点
+function drawCropHandles(ctx) {
+  const handleSize = 12;
+  const halfSize = handleSize / 2;
+  
+  ctx.fillStyle = '#39f';
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  
+  const handles = [
+    { x: cropRect.value.x, y: cropRect.value.y },
+    { x: cropRect.value.x + cropRect.value.width / 2, y: cropRect.value.y },
+    { x: cropRect.value.x + cropRect.value.width, y: cropRect.value.y },
+    { x: cropRect.value.x + cropRect.value.width, y: cropRect.value.y + cropRect.value.height / 2 },
+    { x: cropRect.value.x + cropRect.value.width, y: cropRect.value.y + cropRect.value.height },
+    { x: cropRect.value.x + cropRect.value.width / 2, y: cropRect.value.y + cropRect.value.height },
+    { x: cropRect.value.x, y: cropRect.value.y + cropRect.value.height },
+    { x: cropRect.value.x, y: cropRect.value.y + cropRect.value.height / 2 }
+  ];
+  
+  handles.forEach(handle => {
+    ctx.beginPath();
+    ctx.arc(handle.x, handle.y, halfSize, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  });
+}
+
+// 获取鼠标在裁剪框上的位置
+function getHandleAtPoint(x, y) {
+  const handleSize = 12;
+  const halfSize = handleSize + 5;
+  
+  const handles = {
+    'nw': { x: cropRect.value.x, y: cropRect.value.y },
+    'n': { x: cropRect.value.x + cropRect.value.width / 2, y: cropRect.value.y },
+    'ne': { x: cropRect.value.x + cropRect.value.width, y: cropRect.value.y },
+    'e': { x: cropRect.value.x + cropRect.value.width, y: cropRect.value.y + cropRect.value.height / 2 },
+    'se': { x: cropRect.value.x + cropRect.value.width, y: cropRect.value.y + cropRect.value.height },
+    's': { x: cropRect.value.x + cropRect.value.width / 2, y: cropRect.value.y + cropRect.value.height },
+    'sw': { x: cropRect.value.x, y: cropRect.value.y + cropRect.value.height },
+    'w': { x: cropRect.value.x, y: cropRect.value.y + cropRect.value.height / 2 }
+  };
+  
+  for (const [key, handle] of Object.entries(handles)) {
+    if (Math.abs(x - handle.x) < halfSize && Math.abs(y - handle.y) < halfSize) {
+      return key;
+    }
+  }
+  
+  if (x > cropRect.value.x && x < cropRect.value.x + cropRect.value.width &&
+      y > cropRect.value.y && y < cropRect.value.y + cropRect.value.height) {
+    return 'move';
+  }
+  
+  return null;
+}
+
+// 裁剪鼠标事件
+function handleCropMouseDown(e) {
+  const rect = cropCanvas.value.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  
+  const handle = getHandleAtPoint(x, y);
+  
+  if (handle) {
+    if (handle === 'move') {
+      isDraggingCrop.value = true;
+    } else {
+      isResizingCrop.value = true;
+      resizeHandle.value = handle;
+    }
+    dragStart.value = { x: e.clientX, y: e.clientY, cropX: cropRect.value.x, cropY: cropRect.value.y, cropW: cropRect.value.width, cropH: cropRect.value.height };
+  } else {
+    isMovingImage.value = true;
+    dragStart.value = { x: e.clientX, y: e.clientY, offsetX: cropOffset.value.x, offsetY: cropOffset.value.y };
+  }
+}
+
+function handleCropMouseMove(e) {
+  const dx = e.clientX - dragStart.value.x;
+  const dy = e.clientY - dragStart.value.y;
+  
+  if (isDraggingCrop.value) {
+    cropRect.value.x = dragStart.value.cropX + dx;
+    cropRect.value.y = dragStart.value.cropY + dy;
+  } else if (isResizingCrop.value) {
+    const handle = resizeHandle.value;
+    const minSize = 50;
+    
+    if (handle.includes('e')) {
+      cropRect.value.width = Math.max(minSize, dragStart.value.cropW + dx);
+    }
+    if (handle.includes('w')) {
+      const newWidth = dragStart.value.cropW - dx;
+      if (newWidth >= minSize) {
+        cropRect.value.x = dragStart.value.cropX + dx;
+        cropRect.value.width = newWidth;
+      }
+    }
+    if (handle.includes('s')) {
+      cropRect.value.height = Math.max(minSize, dragStart.value.cropH + dy);
+    }
+    if (handle.includes('n')) {
+      const newHeight = dragStart.value.cropH - dy;
+      if (newHeight >= minSize) {
+        cropRect.value.y = dragStart.value.cropY + dy;
+        cropRect.value.height = newHeight;
+      }
+    }
+  } else if (isMovingImage.value) {
+    cropOffset.value.x = dragStart.value.offsetX + dx;
+    cropOffset.value.y = dragStart.value.offsetY + dy;
+  }
+  
+  drawCropCanvas();
+}
+
+function handleCropMouseUp() {
+  isDraggingCrop.value = false;
+  isResizingCrop.value = false;
+  isMovingImage.value = false;
+  resizeHandle.value = '';
+}
+
+function handleCropWheel(e) {
+  e.preventDefault();
+  
+  const delta = e.deltaY > 0 ? 0.9 : 1.1;
+  const newScale = Math.max(0.1, Math.min(5, cropScale.value * delta));
+  
+  const centerX = cropCanvas.value.width / 2;
+  const centerY = cropCanvas.value.height / 2;
+  
+  const rectCenterX = cropRect.value.x + cropRect.value.width / 2;
+  const rectCenterY = cropRect.value.y + cropRect.value.height / 2;
+  
+  cropScale.value = newScale;
+  
+  const scaleRatio = newScale / (cropScale.value / delta);
+  
+  cropOffset.value.x = centerX - (rectCenterX - cropOffset.value.x) * scaleRatio;
+  cropOffset.value.y = centerY - (rectCenterY - cropOffset.value.y) * scaleRatio;
+  
+  drawCropCanvas();
+}
+
+// 重置裁剪
+function resetCrop() {
+  initCropCanvas();
+}
+
+// 关闭裁剪模态框
+function closeCropModal() {
+  showCropModal.value = false;
+  cropImageSrc.value = '';
+  cropImage.value = null;
+  cropRect.value = { x: 0, y: 0, width: 0, height: 0 };
+  
+  const canvas = cropCanvas.value;
+  if (canvas) {
+    canvas.removeEventListener('mousedown', handleCropMouseDown);
+    canvas.removeEventListener('mousemove', handleCropMouseMove);
+    canvas.removeEventListener('mouseup', handleCropMouseUp);
+    canvas.removeEventListener('mouseleave', handleCropMouseUp);
+    canvas.removeEventListener('wheel', handleCropWheel);
+  }
+}
+
+// 确认裁剪
+function confirmCrop() {
+  if (!cropCanvas.value || !cropImage.value) return;
+  
+  const { x, y, width, height } = cropRect.value;
+  
+  if (width < 50 || height < 50) {
+    alert('请选择一个合适的裁剪区域（至少 50x50 像素）');
+    return;
+  }
+  
+  const canvas = cropCanvas.value;
+  const ctx = canvas.getContext('2d');
+  const img = cropImage.value;
+  
+  const cropCanvasEl = document.createElement('canvas');
+  const cropCtx = cropCanvasEl.getContext('2d');
+  
+  const sourceX = (x - cropOffset.value.x) / cropScale.value;
+  const sourceY = (y - cropOffset.value.y) / cropScale.value;
+  const sourceWidth = width / cropScale.value;
+  const sourceHeight = height / cropScale.value;
+  
+  cropCanvasEl.width = width;
+  cropCanvasEl.height = height;
+  
+  cropCtx.drawImage(
+    img,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    0,
+    0,
+    width,
+    height
+  );
+  
+  const maxSize = 512;
+  let outputWidth = width;
+  let outputHeight = height;
+  
+  if (outputWidth > maxSize || outputHeight > maxSize) {
+    if (outputWidth > outputHeight) {
+      outputHeight = (outputHeight / outputWidth) * maxSize;
+      outputWidth = maxSize;
+    } else {
+      outputWidth = (outputWidth / outputHeight) * maxSize;
+      outputHeight = maxSize;
+    }
+  }
+  
+  const outputCanvas = document.createElement('canvas');
+  const outputCtx = outputCanvas.getContext('2d');
+  outputCanvas.width = outputWidth;
+  outputCanvas.height = outputHeight;
+  
+  outputCtx.drawImage(cropCanvasEl, 0, 0, outputWidth, outputHeight);
+  
+  const dataUrl = outputCanvas.toDataURL('image/png');
+  
+  const form = cropTargetType.value === 'edit' ? cardEditForm.value : cardAddForm.value;
+  form.logo_url = dataUrl;
+  
+  closeCropModal();
 }
 
 // 标签相关辅助方法
@@ -6526,6 +7063,307 @@ async function saveCardAdd() {
   cursor: not-allowed;
 }
 
+.input-with-actions {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.input-with-actions .batch-input {
+  flex: 1;
+}
+
+.action-btn {
+  padding: 8px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+  color: #374151;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.action-btn:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.action-btn:active {
+  transform: scale(0.95);
+}
+
+.crop-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  background: #f9fafb;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  min-height: 500px;
+  max-height: 800px;
+  overflow: hidden;
+}
+
+.crop-image {
+  max-width: 100%;
+  max-height: 800px;
+  display: block;
+}
+
+.crop-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.crop-info {
+  text-align: center;
+  color: #6b7280;
+  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.crop-size {
+  color: #667eea;
+  font-weight: 600;
+  font-size: 13px;
+  background: rgba(102, 126, 234, 0.1);
+  padding: 4px 12px;
+  border-radius: 12px;
+}
+
+/* Cropper.js 样式 */
+.crop-container :deep(.cropper-container) {
+  direction: ltr;
+  font-size: 0;
+  line-height: 0;
+  position: relative;
+  -ms-touch-action: none;
+  touch-action: none;
+}
+
+.crop-container :deep(.cropper-container) > * {
+  box-sizing: border-box;
+}
+
+.crop-container :deep(.cropper-wrap-box),
+.crop-container :deep(.cropper-canvas),
+.crop-container :deep(.cropper-drag-box),
+.crop-container :deep(.cropper-crop-box),
+.crop-container :deep(.cropper-modal) {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+.crop-container :deep(.cropper-wrap-box) {
+  overflow: hidden;
+}
+
+.crop-container :deep(.cropper-drag-box) {
+  opacity: 0;
+  background-color: #fff;
+}
+
+.crop-container :deep(.cropper-modal) {
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.crop-container :deep(.cropper-view-box) {
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  outline: 3px solid #39f;
+  outline-color: rgba(51, 153, 255, 0.75);
+}
+
+.crop-container :deep(.cropper-dashed) {
+  position: absolute;
+  display: block;
+  opacity: 0.5;
+  border: 0 dashed #fff;
+}
+
+.crop-container :deep(.cropper-dashed.dashed-h) {
+  top: 33.33333%;
+  left: 0;
+  width: 100%;
+  height: 33.33333%;
+  border-top-width: 1px;
+  border-bottom-width: 1px;
+}
+
+.crop-container :deep(.cropper-dashed.dashed-v) {
+  top: 0;
+  left: 33.33333%;
+  width: 33.33333%;
+  height: 100%;
+  border-right-width: 1px;
+  border-left-width: 1px;
+}
+
+.crop-container :deep(.cropper-face),
+.crop-container :deep(.cropper-line),
+.crop-container :deep(.cropper-point) {
+  position: absolute;
+  display: block;
+}
+
+.crop-container :deep(.cropper-face) {
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.1;
+}
+
+.crop-container :deep(.cropper-line) {
+  opacity: 0.3;
+}
+
+.crop-container :deep(.cropper-line.line-e) {
+  top: 0;
+  right: -6px;
+  width: 10px;
+  height: 100%;
+}
+
+.crop-container :deep(.cropper-line.line-n) {
+  top: -6px;
+  left: 0;
+  width: 100%;
+  height: 10px;
+}
+
+.crop-container :deep(.cropper-line.line-w) {
+  top: 0;
+  left: -6px;
+  width: 10px;
+  height: 100%;
+}
+
+.crop-container :deep(.cropper-line.line-s) {
+  bottom: -6px;
+  left: 0;
+  width: 100%;
+  height: 10px;
+}
+
+.crop-container :deep(.cropper-point) {
+  width: 12px;
+  height: 12px;
+  opacity: 0.75;
+  background-color: #39f;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.crop-container :deep(.cropper-point.point-e) {
+  top: 50%;
+  right: -6px;
+  margin-top: -6px;
+}
+
+.crop-container :deep(.cropper-point.point-n) {
+  top: -6px;
+  left: 50%;
+  margin-left: -6px;
+}
+
+.crop-container :deep(.cropper-point.point-w) {
+  top: 50%;
+  left: -6px;
+  margin-top: -6px;
+}
+
+.crop-container :deep(.cropper-point.point-s) {
+  bottom: -6px;
+  left: 50%;
+  margin-left: -6px;
+}
+
+.crop-container :deep(.cropper-point.point-ne) {
+  top: -6px;
+  right: -6px;
+}
+
+.crop-container :deep(.cropper-point.point-nw) {
+  top: -6px;
+  left: -6px;
+}
+
+.crop-container :deep(.cropper-point.point-sw) {
+  bottom: -6px;
+  left: -6px;
+}
+
+.crop-container :deep(.cropper-point.point-se) {
+  bottom: -6px;
+  right: -6px;
+}
+
+.crop-container :deep(.cropper-point.point-e):hover,
+.crop-container :deep(.cropper-point.point-n):hover,
+.crop-container :deep(.cropper-point.point-w):hover,
+.crop-container :deep(.cropper-point.point-s):hover,
+.crop-container :deep(.cropper-point.point-ne):hover,
+.crop-container :deep(.cropper-point.point-nw):hover,
+.crop-container :deep(.cropper-point.point-sw):hover,
+.crop-container :deep(.cropper-point.point-se):hover {
+  opacity: 1;
+}
+
+.crop-container :deep(.cropper-bg) {
+  background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQAQMAAAAlPW0iAAAAA3NCSVQICAjb4U/gAAAABlBMVEXMzMz////T0RVMAAAAJklEQVQImWNgwAT0ZGDAiMjCwMDAwMDEwMDEwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAA4FwMW+oOvAAAAAElFTkSuQmCC');
+}
+
+.crop-container :deep(.cropper-invisible) {
+  opacity: 0;
+}
+
+.crop-container :deep(.cropper-hide) {
+  display: none;
+}
+
+.crop-container :deep(.cropper-hidden) {
+  display: none;
+}
+
+.crop-container :deep(.cropper-move) {
+  cursor: move;
+}
+
+.crop-container :deep(.cropper-crop) {
+  cursor: crosshair;
+}
+
+.crop-container :deep(.cropper-disabled .cropper-drag-box),
+.crop-container :deep(.cropper-disabled .cropper-face),
+.crop-container :deep(.cropper-disabled .cropper-line),
+.crop-container :deep(.cropper-disabled .cropper-point) {
+  cursor: not-allowed;
+}
+
+.crop-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
 .batch-error {
   color: #dc2626;
   font-size: 14px;
@@ -7776,6 +8614,13 @@ async function saveCardAdd() {
 
 .modal-content.menu-modal {
   max-width: 360px;
+}
+
+.modal-content.crop-modal {
+  width: 90rem;
+  height: 70rem;
+  max-width: 98vw;
+  max-height: 95vh;
 }
 
 @keyframes modalSlideIn {

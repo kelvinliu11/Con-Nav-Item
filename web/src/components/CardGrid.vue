@@ -56,14 +56,19 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted, watch } from 'vue';
+import Sortable from 'sortablejs';
 
 const props = defineProps({ 
   cards: Array,
   selectedCards: Array,
   categoryId: Number,
   subCategoryId: [Number, null],
-  selectionMode: Boolean
+  selectionMode: Boolean,
+  enableDrag: {
+    type: Boolean,
+    default: true
+  }
 });
 
 const emit = defineEmits([
@@ -72,15 +77,61 @@ const emit = defineEmits([
   'toggleCardSelection',
   'openMovePanel',
   'requireAuth',
-  'cardClicked'
+  'cardClicked',
+  'cardReorder'
 ]);
 
 const cardGridRef = ref(null);
+let sortableInstance = null;
 
 const contextMenuVisible = ref(false);
 const contextMenuX = ref(0);
 const contextMenuY = ref(0);
 const contextMenuCard = ref(null);
+
+function initSortable() {
+  if (!cardGridRef.value || !props.enableDrag) return;
+  
+  sortableInstance = Sortable.create(cardGridRef.value, {
+    animation: 150,
+    ghostClass: 'sortable-ghost',
+    chosenClass: 'sortable-chosen',
+    dragClass: 'sortable-drag',
+    handle: '.link-item',
+    filter: '.selected',
+    preventOnFilter: false,
+    onEnd: (evt) => {
+      const { oldIndex, newIndex } = evt;
+      if (oldIndex !== undefined && newIndex !== undefined && oldIndex !== newIndex) {
+        const newCards = [...props.cards];
+        const [movedCard] = newCards.splice(oldIndex, 1);
+        newCards.splice(newIndex, 0, movedCard);
+        emit('cardReorder', newCards);
+      }
+    }
+  });
+}
+
+function destroySortable() {
+  if (sortableInstance) {
+    sortableInstance.destroy();
+    sortableInstance = null;
+  }
+}
+
+watch(() => props.enableDrag, (enabled) => {
+  if (enabled) {
+    initSortable();
+  } else {
+    destroySortable();
+  }
+});
+
+watch(() => props.selectionMode, (isSelectionMode) => {
+  if (sortableInstance) {
+    sortableInstance.option('disabled', isSelectionMode);
+  }
+});
 
 function handleContextMenu(event, card) {
   contextMenuCard.value = card;
@@ -194,11 +245,13 @@ function recordCardClick(cardId) {
 onMounted(() => {
   document.addEventListener('click', handleClickOutside);
   document.addEventListener('scroll', closeContextMenu);
+  initSortable();
 });
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside);
   document.removeEventListener('scroll', closeContextMenu);
+  destroySortable();
 });
 
 function getOriginUrl(url) {
@@ -612,5 +665,22 @@ function isCardSelected(card) {
   height: 1px;
   background: rgba(0, 0, 0, 0.08);
   margin: 4px 0;
+}
+
+.sortable-ghost {
+  opacity: 0.4;
+  background: rgba(99, 179, 237, 0.2);
+  border: 2px dashed rgba(99, 179, 237, 0.6);
+}
+
+.sortable-chosen {
+  transform: scale(1.05);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  z-index: 10;
+}
+
+.sortable-drag {
+  opacity: 0.9;
+  cursor: grabbing;
 }
 </style>

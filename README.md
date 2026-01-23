@@ -15,6 +15,7 @@ npm run install:all
 # 启动开发服务器
 npm run dev
 source ~/.nvm/nvm.sh && nvm use 20.17.0 && npm start
+ source ~/.nvm/nvm.sh && nvm use 20.17.0 && npm run build && npm start
 ```
 
 ### 生产环境
