@@ -5434,6 +5434,9 @@ async function initNavConfig() {
         const result = await chrome.storage.sync.get(['navUrl', 'lastMenuId', 'lastSubMenuId']);
         if (result.navUrl) {
             navServerUrl = result.navUrl;
+        } else {
+            // 使用默认服务器地址（从 config.js 导入）
+            navServerUrl = DEFAULT_NAV_SERVER_URL;
         }
         if (result.lastMenuId) {
             lastSelectedMenuId = result.lastMenuId;
@@ -5690,11 +5693,7 @@ function closeAddToNavModal() {
 
 // 加载导航页分类
 async function loadNavMenus() {
-    const serverUrl = document.getElementById('navServerUrl').value.trim();
-    if (!serverUrl) {
-        alert('请输入导航站地址');
-        return;
-    }
+    let serverUrl = navServerUrl || DEFAULT_NAV_SERVER_URL;
     
     navServerUrl = serverUrl.replace(/\/$/, ''); // 移除末尾斜杠
     
@@ -5756,11 +5755,7 @@ function onMenuSelectChange() {
 // 显示新建分类弹窗
 function showNewMenuModal(type) {
     // 确保服务器地址已设置
-    const serverUrl = document.getElementById('navServerUrl').value.trim();
-    if (!serverUrl) {
-        alert('请先输入导航站地址并加载分类');
-        return;
-    }
+    let serverUrl = navServerUrl || DEFAULT_NAV_SERVER_URL;
     navServerUrl = serverUrl.replace(/\/$/, '');
     
     newMenuType = type;
@@ -5871,11 +5866,7 @@ async function confirmNewMenu() {
 async function getNavAuthToken(forceNew = false) {
     // 确保服务器地址已设置
     if (!navServerUrl) {
-        const serverUrl = document.getElementById('navServerUrl')?.value?.trim();
-        if (!serverUrl) {
-            alert('请先输入导航站地址');
-            return null;
-        }
+        let serverUrl = DEFAULT_NAV_SERVER_URL;
         navServerUrl = serverUrl.replace(/\/$/, '');
     }
     
@@ -5909,20 +5900,23 @@ async function getNavAuthToken(forceNew = false) {
         await chrome.storage.local.remove(['navAuthToken']);
     }
     
-    // 没有有效token，提示用户输入密码
-    const password = await showAuthPasswordModal('请输入导航站管理密码：');
-    if (!password) return null;
+    // 没有有效token，提示用户输入用户名和密码
+    const credentials = await showAuthPasswordModal('请输入导航站账号：');
+    if (!credentials) return null;
     
     try {
-        // 使用verify-password接口，只需要密码
-        const response = await fetch(`${navServerUrl}/api/verify-password`, {
+        // 使用login接口，需要用户名和密码
+        const response = await fetch(`${navServerUrl}/api/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password })
+            body: JSON.stringify({ 
+                username: credentials.username, 
+                password: credentials.password 
+            })
         });
         
         if (!response.ok) {
-            let errorMsg = '密码验证失败';
+            let errorMsg = '登录失败';
             try {
                 const error = await response.json();
                 errorMsg = error.error || errorMsg;
@@ -5939,8 +5933,8 @@ async function getNavAuthToken(forceNew = false) {
             throw new Error('服务器未返回token');
         }
         
-        // 保存token
-        await chrome.storage.local.set({ navAuthToken: token });
+        // 保存token和username
+        await chrome.storage.local.set({ navAuthToken: token, navUsername: data.username || credentials.username });
         
         return token;
     } catch (error) {
@@ -6304,18 +6298,17 @@ async function showNavSettingsModal() {
     // 加载已保存的设置
     try {
         const config = await chrome.storage.sync.get(['navUrl', 'lastMenuId', 'lastSubMenuId']);
-        document.getElementById('navSettingsUrl').value = config.navUrl || '';
+        const navUrl = config.navUrl || DEFAULT_NAV_SERVER_URL;
+        navServerUrl = navUrl.replace(/\/$/, '');
         
-        if (config.navUrl) {
-            await loadSettingsMenus();
+        await loadSettingsMenus();
+        
+        if (config.lastMenuId) {
+            document.getElementById('defaultMenuSelect').value = config.lastMenuId;
+            onDefaultMenuChange();
             
-            if (config.lastMenuId) {
-                document.getElementById('defaultMenuSelect').value = config.lastMenuId;
-                onDefaultMenuChange();
-                
-                if (config.lastSubMenuId) {
-                    document.getElementById('defaultSubMenuSelect').value = config.lastSubMenuId;
-                }
+            if (config.lastSubMenuId) {
+                document.getElementById('defaultSubMenuSelect').value = config.lastSubMenuId;
             }
         }
     } catch (e) {
@@ -6330,14 +6323,8 @@ function closeNavSettingsModal() {
 
 // 测试连接并加载分类
 async function testNavConnection() {
-    const urlInput = document.getElementById('navSettingsUrl');
     const statusDiv = document.getElementById('connectionStatus');
-    const url = urlInput.value.trim();
-    
-    if (!url) {
-        statusDiv.innerHTML = '<span style="color: #dc2626;">请输入导航站地址</span>';
-        return;
-    }
+    let url = navServerUrl || DEFAULT_NAV_SERVER_URL;
     
     statusDiv.innerHTML = '<span style="color: #666;">正在测试连接...</span>';
     
@@ -6374,8 +6361,7 @@ async function testNavConnection() {
 
 // 加载设置中的分类
 async function loadSettingsMenus() {
-    const url = document.getElementById('navSettingsUrl').value.trim();
-    if (!url) return;
+    let url = navServerUrl || DEFAULT_NAV_SERVER_URL;
     
     try {
         const serverUrl = url.replace(/\/$/, '');
@@ -6423,15 +6409,11 @@ function onDefaultMenuChange() {
 
 // 保存导航页设置
 async function saveNavSettings() {
-    const url = document.getElementById('navSettingsUrl').value.trim();
     const menuId = document.getElementById('defaultMenuSelect').value;
     const subMenuId = document.getElementById('defaultSubMenuSelect').value;
     const statusDiv = document.getElementById('navSettingsStatus');
     
-    if (!url) {
-        statusDiv.innerHTML = '<span style="color: #dc2626;">请输入导航站地址</span>';
-        return;
-    }
+    let url = navServerUrl || DEFAULT_NAV_SERVER_URL;
     
     try {
         // 保存设置
@@ -6487,15 +6469,10 @@ async function confirmNewMenuFromSettings() {
         return;
     }
     
-    const url = document.getElementById('navSettingsUrl').value.trim();
-    if (!url) {
-        alert('请先设置导航站地址');
-        return;
-    }
+    const serverUrl = navServerUrl || DEFAULT_NAV_SERVER_URL;
     
     // 确保navServerUrl已设置
-    const serverUrl = url.replace(/\/$/, '');
-    navServerUrl = serverUrl;
+    navServerUrl = serverUrl.replace(/\/$/, '');
     
     // 立即关闭弹窗，提升响应速度
     document.getElementById('newMenuModal').classList.remove('active');
@@ -6686,13 +6663,7 @@ async function confirmImportFolder() {
     const confirmBtn = document.getElementById('btnConfirmImportFolder');
     
     const config = await chrome.storage.sync.get(['navUrl']);
-    if (!config.navUrl) {
-        statusDiv.innerHTML = '<span style="color: #dc2626;">请先在导航页设置中配置导航站地址</span>';
-        return;
-    }
-    
-    // 确保navServerUrl已设置（fetchWithAuth依赖它）
-    navServerUrl = config.navUrl.replace(/\/$/, '');
+    const navServerUrl = (config.navUrl || DEFAULT_NAV_SERVER_URL).replace(/\/$/, '');
     
     const importType = document.getElementById('importFolderType').value;
     const parentMenuId = document.getElementById('importParentMenu').value;
@@ -6842,10 +6813,10 @@ async function deleteMenuFromSettings() {
     const doubleConfirmed = confirm(`⚠️ 再次确认：删除分类"${menuName}"及其所有内容？`);
     if (!doubleConfirmed) return;
     
-    const url = document.getElementById('navSettingsUrl').value.trim();
+    let url = document.getElementById('navSettingsUrl').value.trim();
     if (!url) {
-        alert('请先设置导航站地址');
-        return;
+        url = DEFAULT_NAV_SERVER_URL;
+        document.getElementById('navSettingsUrl').value = url;
     }
     
     // 确保navServerUrl已设置
@@ -6899,10 +6870,10 @@ async function deleteSubMenuFromSettings() {
     const doubleConfirmed = confirm(`⚠️ 再次确认：删除子分类"${subMenuName}"及其所有内容？`);
     if (!doubleConfirmed) return;
     
-    const url = document.getElementById('navSettingsUrl').value.trim();
+    let url = document.getElementById('navSettingsUrl').value.trim();
     if (!url) {
-        alert('请先设置导航站地址');
-        return;
+        url = DEFAULT_NAV_SERVER_URL;
+        document.getElementById('navSettingsUrl').value = url;
     }
     
     // 确保navServerUrl已设置
@@ -7719,6 +7690,10 @@ async function showCloudBackupModal() {
         if (result.cloudBackupServer) {
             cloudBackupServerUrl = result.cloudBackupServer;
             document.getElementById('cloudBackupServer').value = result.cloudBackupServer;
+        } else {
+            // 使用默认服务器地址
+            cloudBackupServerUrl = DEFAULT_NAV_SERVER_URL;
+            document.getElementById('cloudBackupServer').value = DEFAULT_NAV_SERVER_URL;
         }
         if (result.backupDeviceName) {
             document.getElementById('backupDeviceName').value = result.backupDeviceName;
@@ -7937,7 +7912,8 @@ async function verifyTokenWithRetry(token, maxRetries = 1, timeout = 10000) {
 function showAuthPasswordModal(promptText = '请输入管理密码进行授权：') {
     return new Promise((resolve) => {
         const modal = document.getElementById('authPasswordModal');
-        const input = document.getElementById('authPasswordInput');
+        const usernameInput = document.getElementById('authUsernameInput');
+        const passwordInput = document.getElementById('authPasswordInput');
         const errorEl = document.getElementById('authPasswordError');
         const confirmBtn = document.getElementById('btnAuthPasswordConfirm');
         const cancelBtn = document.getElementById('btnAuthPasswordCancel');
@@ -7945,14 +7921,15 @@ function showAuthPasswordModal(promptText = '请输入管理密码进行授权�
         const labelEl = modal.querySelector('.form-group label');
         
         // 重置状态
-        input.value = '';
+        usernameInput.value = '';
+        passwordInput.value = '';
         errorEl.style.display = 'none';
         errorEl.textContent = '';
         if (labelEl) labelEl.textContent = promptText;
         
         // 显示弹窗
         modal.classList.add('active');
-        input.focus();
+        usernameInput.focus();
         
         // 清理函数
         const cleanup = () => {
@@ -7960,20 +7937,28 @@ function showAuthPasswordModal(promptText = '请输入管理密码进行授权�
             confirmBtn.removeEventListener('click', handleConfirm);
             cancelBtn.removeEventListener('click', handleCancel);
             closeBtn.removeEventListener('click', handleCancel);
-            input.removeEventListener('keydown', handleKeydown);
+            usernameInput.removeEventListener('keydown', handleKeydown);
+            passwordInput.removeEventListener('keydown', handleKeydown);
         };
         
         // 确认处理
         const handleConfirm = () => {
-            const password = input.value.trim();
+            const username = usernameInput.value.trim();
+            const password = passwordInput.value.trim();
+            if (!username) {
+                errorEl.textContent = '请输入用户名';
+                errorEl.style.display = 'block';
+                usernameInput.focus();
+                return;
+            }
             if (!password) {
                 errorEl.textContent = '请输入密码';
                 errorEl.style.display = 'block';
-                input.focus();
+                passwordInput.focus();
                 return;
             }
             cleanup();
-            resolve(password);
+            resolve({ username, password });
         };
         
         // 取消处理
@@ -7994,7 +7979,8 @@ function showAuthPasswordModal(promptText = '请输入管理密码进行授权�
         confirmBtn.addEventListener('click', handleConfirm);
         cancelBtn.addEventListener('click', handleCancel);
         closeBtn.addEventListener('click', handleCancel);
-        input.addEventListener('keydown', handleKeydown);
+        usernameInput.addEventListener('keydown', handleKeydown);
+        passwordInput.addEventListener('keydown', handleKeydown);
     });
 }
 
@@ -8004,8 +7990,8 @@ async function showAuthLoginDialog() {
         return;
     }
     
-    const password = await showAuthPasswordModal();
-    if (!password) return;
+    const credentials = await showAuthPasswordModal('请输入导航站账号：');
+    if (!credentials) return;
     
     const statusEl = document.getElementById('cloudBackupStatus');
     const authStatusEl = document.getElementById('authStatus');
@@ -8026,17 +8012,20 @@ async function showAuthLoginDialog() {
     isVerifying = true;
     
     try {
-        // 第一步：登录获取Token
-        const response = await fetch(`${cloudBackupServerUrl}/api/extension/login`, {
+        // 第一步：登录获取Token（使用新的多租户登录接口）
+        const response = await fetch(`${cloudBackupServerUrl}/api/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password })
+            body: JSON.stringify({ 
+                username: credentials.username,
+                password: credentials.password 
+            })
         });
         
         const data = await response.json();
         
-        if (!data.success || !data.token) {
-            statusEl.textContent = `❌ 授权失败: ${data.message || '密码错误'}`;
+        if (!data.token) {
+            statusEl.textContent = `❌ 授权失败: ${data.error || '登录失败'}`;
             statusEl.style.color = '#ef4444';
             authStatusEl.innerHTML = '<span style="color: #ef4444;">❌ 授权失败</span>';
             authStatusEl.style.borderColor = '#fecaca';

@@ -172,31 +172,7 @@
     
     <!-- 导航页 iframe -->
     <iframe id="navFrame" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation allow-modals"></iframe>
-    
-    <!-- 设置页面 -->
-    <div id="setupContainer">
-      <div class="container">
-        <h1>🌐 欢迎使用导航站插件</h1>
-        <p>请输入你的导航站地址，开始使用吧！</p>
-        
-        <div class="input-group">
-            <input 
-                type="url" 
-                id="navUrl" 
-                placeholder="https://your-domain.com"
-                autocomplete="off"
-            />
-            <div class="error" id="error">请输入有效的 URL 地址</div>
-        </div>
-        
-        <button id="saveBtn">保存并开始使用</button>
-        
-        <div class="loading" id="loading">正在跳转...</div>
-        
-        <p class="example">示例:https://your-domain.com</p>
-      </div>
-    </div>
 
-    <script src="newtab.js"></script>
+    <script type="module" src="newtab.js"></script>
 </body>
 </html>

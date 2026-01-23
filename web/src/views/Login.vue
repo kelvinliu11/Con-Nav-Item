@@ -128,10 +128,6 @@ const handleSubmit = async () => {
       });
     }
     
-    if (response.data.isNewUser) {
-      alert('欢迎新用户！已自动为您创建账号');
-    }
-    
     router.push('/');
   } catch (err) {
     error.value = err.response?.data?.error || err.message || '操作失败，请重试';

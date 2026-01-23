@@ -1,6 +1,8 @@
 // background.js - 后台服务脚本
 // 用于处理右键菜单、快速添加到导航页、分类子菜单
 
+import { DEFAULT_NAV_SERVER_URL } from './config.js';
+
 // 缓存的菜单数据
 let cachedMenus = [];
 let lastMenuFetchTime = 0;
@@ -93,12 +95,7 @@ async function registerContextMenus() {
 async function loadAndCreateCategoryMenus() {
     try {
         const config = await chrome.storage.sync.get(['navUrl']);
-        if (!config.navUrl) {
-            console.warn('未配置导航站地址，跳过加载分类菜单');
-            return;
-        }
-        
-        const navServerUrl = config.navUrl.replace(/\/$/, '');
+        const navServerUrl = (config.navUrl || DEFAULT_NAV_SERVER_URL).replace(/\/$/, '');
         
         // 检查缓存
         if (cachedMenus.length > 0 && Date.now() - lastMenuFetchTime < MENU_CACHE_MS) {
@@ -243,7 +240,7 @@ function createCategorySubMenus(menus) {
 async function refreshCategoryMenus() {
     try {
         const config = await chrome.storage.sync.get(['navUrl']);
-        if (!config.navUrl) return;
+        const navServerUrl = (config.navUrl || DEFAULT_NAV_SERVER_URL).replace(/\/$/, '');
         
         // 强制清空所有缓存
         lastMenuFetchTime = 0;
@@ -318,11 +315,7 @@ async function addToSpecificCategory(menuItemId, url, title, tabId = null) {
         
         const config = await chrome.storage.sync.get(['navUrl']);
         const token = (await chrome.storage.local.get(['navAuthToken'])).navAuthToken;
-        
-        if (!config.navUrl) {
-            showNotification('请先配置', '请先在书签管理器中配置导航站地址');
-            return;
-        }
+        const navServerUrl = (config.navUrl || DEFAULT_NAV_SERVER_URL).replace(/\/$/, '');
         
         if (!token) {
             showNotification('需要登录', '请在书签管理器中登录导航站');
@@ -334,8 +327,6 @@ async function addToSpecificCategory(menuItemId, url, title, tabId = null) {
             chrome.tabs.create({ url: bookmarksUrl });
             return;
         }
-        
-        const navServerUrl = config.navUrl.replace(/\/$/, '');
         
         // 构建卡片数据（包含自动生成的标签和描述）
         const card = await buildCardData(url, title, navServerUrl, token, tabId);
@@ -389,8 +380,9 @@ async function quickAddToNav(url, title, tabId = null) {
     try {
         const config = await chrome.storage.sync.get(['navUrl', 'lastMenuId', 'lastSubMenuId']);
         const token = (await chrome.storage.local.get(['navAuthToken'])).navAuthToken;
+        const navServerUrl = (config.navUrl || DEFAULT_NAV_SERVER_URL).replace(/\/$/, '');
         
-        if (!config.navUrl || !config.lastMenuId) {
+        if (!config.lastMenuId) {
             showNotification('请先配置', '请先添加一次书签以设置默认分类');
             chrome.tabs.create({ url: chrome.runtime.getURL('bookmarks.html') });
             return;
@@ -403,8 +395,6 @@ async function quickAddToNav(url, title, tabId = null) {
             chrome.tabs.create({ url: bookmarksUrl });
             return;
         }
-        
-        const navServerUrl = config.navUrl.replace(/\/$/, '');
         
         // 构建卡片数据（包含自动生成的标签和描述）
         const card = await buildCardData(url, title, navServerUrl, token, tabId);
@@ -820,12 +810,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         (async () => {
             try {
                 const config = await chrome.storage.sync.get(['navUrl']);
-                if (!config.navUrl) {
-                    sendResponse({ success: false, error: '未配置导航站' });
-                    return;
-                }
-                
-                const navServerUrl = config.navUrl.replace(/\/$/, '');
+                const navServerUrl = (config.navUrl || DEFAULT_NAV_SERVER_URL).replace(/\/$/, '');
                 
                 // 如果缓存有效且不是强制刷新，使用缓存
                 if (!request.forceRefresh && cachedMenus.length > 0 && Date.now() - lastMenuFetchTime < MENU_CACHE_MS) {

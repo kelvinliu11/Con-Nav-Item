@@ -33,17 +33,11 @@ chrome.storage.sync.get(['navUrl', 'newtabMode', 'floatBtnEnabled'], function(re
         navButtons.style.display = 'flex';
     }
 
-    if (result.navUrl) {
-        // 隐藏完整网址，只显示已配置状态
-        urlElement.textContent = '✅ 已配置';
-        urlElement.classList.remove('empty');
-        urlElement.style.color = '#10b981';
-        openNavBtn.disabled = false;
-    } else {
-        urlElement.textContent = '❌ 未设置';
-        urlElement.classList.add('empty');
-        openNavBtn.disabled = true;
-    }
+    const navUrl = result.navUrl || DEFAULT_NAV_SERVER_URL;
+    urlElement.textContent = '✅ 已配置';
+    urlElement.classList.remove('empty');
+    urlElement.style.color = '#10b981';
+    openNavBtn.disabled = false;
 });
 
 // 模式切换
@@ -72,12 +66,11 @@ document.getElementById('openSettings').addEventListener('click', function() {
 // 访问管理后台
 document.getElementById('openNav').addEventListener('click', function() {
     chrome.storage.sync.get(['navUrl'], function(result) {
-        if (result.navUrl) {
-            // 管理后台地址为 domain/admin
-            let adminUrl = result.navUrl.replace(/\/+$/, '') + '/admin';
-            chrome.tabs.create({ url: adminUrl });
-            window.close();
-        }
+        const navUrl = result.navUrl || DEFAULT_NAV_SERVER_URL;
+        // 管理后台地址为 domain/admin
+        let adminUrl = navUrl.replace(/\/+$/, '') + '/admin';
+        chrome.tabs.create({ url: adminUrl });
+        window.close();
     });
 });
 
@@ -105,11 +98,8 @@ async function checkCloudBackupStatus() {
             }
         }
         
-        // 如果没有配置服务器地址，显示提示
-        if (!result.cloudBackupServer) {
-            tip.style.display = 'block';
-            return;
-        }
+        // 使用配置的服务器地址或默认地址
+        const serverUrl = (result.cloudBackupServer || DEFAULT_NAV_SERVER_URL).replace(/\/+$/, '');
         
         // 如果没有Token，显示提示
         if (!result.cloudBackupToken) {
@@ -118,7 +108,6 @@ async function checkCloudBackupStatus() {
         }
         
         // 验证Token是否有效
-        const serverUrl = result.cloudBackupServer.replace(/\/+$/, '');
         const timestamp = Date.now();
         const response = await fetch(`${serverUrl}/api/extension/verify?_t=${timestamp}`, {
             method: 'GET',

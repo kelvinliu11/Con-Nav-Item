@@ -1,11 +1,12 @@
-﻿// 加载当前设置
+// options.js - 选项页面脚本
+
+// 加载当前设置
 function loadSettings() {
     chrome.storage.sync.get(['navUrl'], function(result) {
-        if (result.navUrl) {
-            document.getElementById('navUrl').value = result.navUrl;
-            document.getElementById('currentUrlText').textContent = result.navUrl;
-            document.getElementById('currentUrl').style.display = 'block';
-        }
+        const navUrl = result.navUrl || DEFAULT_NAV_SERVER_URL;
+        document.getElementById('navUrl').value = navUrl;
+        document.getElementById('currentUrlText').textContent = navUrl;
+        document.getElementById('currentUrl').style.display = 'block';
     });
 }
 
@@ -23,11 +24,11 @@ function showMessage(text, type = 'success') {
 
 // 保存设置
 document.getElementById('saveBtn').addEventListener('click', function() {
-    const url = document.getElementById('navUrl').value.trim();
+    let url = document.getElementById('navUrl').value.trim();
     
     if (!url) {
-        showMessage('请输入导航站地址', 'error');
-        return;
+        url = DEFAULT_NAV_SERVER_URL;
+        document.getElementById('navUrl').value = url;
     }
     
     // 验证 URL
